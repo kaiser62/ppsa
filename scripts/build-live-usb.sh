@@ -307,33 +307,78 @@ if [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" ]; then
     cp "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" "$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTx64.EFI"
 fi
 
-# Fix grub.cfg: replace any /dev/loop* root references with UUID
-# (update-grub runs inside the chroot where root is on a loop device)
-if [ -f "$MOUNT_DIR/boot/grub/grub.cfg" ]; then
-    echo "Fixing grub.cfg root device (using UUID=$ROOT_UUID)..."
-    cp "$MOUNT_DIR/boot/grub/grub.cfg" "$MOUNT_DIR/boot/grub/grub.cfg.bak"
-    sed -i "s|root=/dev/loop[^ ]*|root=UUID=$ROOT_UUID|g" "$MOUNT_DIR/boot/grub/grub.cfg"
-    # Debug: show generated config head
-    echo "--- /boot/grub/grub.cfg (first 15 lines) ---"
-    head -15 "$MOUNT_DIR/boot/grub/grub.cfg"
-    echo "---"
-    # Verify UUID is in the file
-    if grep -q "$ROOT_UUID" "$MOUNT_DIR/boot/grub/grub.cfg"; then
-        echo "OK: UUID found in grub.cfg"
-    else
-        echo "WARNING: UUID $ROOT_UUID not found in grub.cfg after sed fix"
-    fi
-    # Verify no /dev/loop references remain
-    if grep -q "/dev/loop" "$MOUNT_DIR/boot/grub/grub.cfg"; then
-        echo "ERROR: /dev/loop references still present in grub.cfg!"
-        grep "/dev/loop" "$MOUNT_DIR/boot/grub/grub.cfg"
-        exit 1
-    fi
-    echo "grub.cfg verified OK"
-else
+# Fix grub.cfg: replace any /dev/loop* root references with UUID,
+# and generate manual entries if 10_linux produced nothing
+# (grub-probe can fail on loop devices inside the chroot)
+if [ ! -f "$MOUNT_DIR/boot/grub/grub.cfg" ]; then
     echo "ERROR: /boot/grub/grub.cfg not found after update-grub!"
     exit 1
 fi
+
+cp "$MOUNT_DIR/boot/grub/grub.cfg" "$MOUNT_DIR/boot/grub/grub.cfg.bak"
+sed -i "s|root=/dev/loop[^ ]*|root=UUID=$ROOT_UUID|g" "$MOUNT_DIR/boot/grub/grub.cfg"
+
+# Check if 10_linux produced any boot entries
+if ! grep -q "linux /boot/vmlinuz" "$MOUNT_DIR/boot/grub/grub.cfg" 2>/dev/null; then
+    echo "WARNING: update-grub produced no Linux entries (grub-probe fails on loop devices)."
+    echo "Generating manual grub.cfg with detected kernel..."
+
+    # Find the latest kernel/initrd
+    KERNEL=""
+    INITRD=""
+    for k in "$MOUNT_DIR/boot/vmlinuz-"*; do
+        [ -f "$k" ] && KERNEL="$(basename "$k")"
+    done
+    for i in "$MOUNT_DIR/boot/initrd.img-"*; do
+        [ -f "$i" ] && INITRD="$(basename "$i")"
+    done
+
+    if [ -z "$KERNEL" ] || [ -z "$INITRD" ]; then
+        echo "ERROR: No kernel or initrd found in /boot/!"
+        ls -la "$MOUNT_DIR/boot/" || true
+        exit 1
+    fi
+
+    echo "Detected kernel: $KERNEL, initrd: $INITRD"
+    cat > "$MOUNT_DIR/boot/grub/grub.cfg" <<CFGEOF
+set default=0
+set timeout=2
+
+menuentry 'PPSA Debian GNU/Linux' {
+    search --no-floppy --fs-uuid --set=root $ROOT_UUID
+    linux /boot/$KERNEL root=UUID=$ROOT_UUID ro quiet mitigations=off
+    initrd /boot/$INITRD
+}
+
+menuentry 'PPSA Debian GNU/Linux (recovery)' {
+    search --no-floppy --fs-uuid --set=root $ROOT_UUID
+    linux /boot/$KERNEL root=UUID=$ROOT_UUID ro single
+    initrd /boot/$INITRD
+}
+CFGEOF
+    echo "Manual grub.cfg written."
+fi
+
+# Debug: show generated config head
+echo "--- /boot/grub/grub.cfg (first 20 lines) ---"
+head -20 "$MOUNT_DIR/boot/grub/grub.cfg"
+echo "---"
+
+# Verify UUID is in the file
+if grep -q "$ROOT_UUID" "$MOUNT_DIR/boot/grub/grub.cfg"; then
+    echo "OK: UUID found in grub.cfg"
+else
+    echo "ERROR: UUID $ROOT_UUID not found in grub.cfg!"
+    exit 1
+fi
+
+# Verify no /dev/loop references remain
+if grep -q "/dev/loop" "$MOUNT_DIR/boot/grub/grub.cfg"; then
+    echo "ERROR: /dev/loop references still present in grub.cfg!"
+    grep "/dev/loop" "$MOUNT_DIR/boot/grub/grub.cfg"
+    exit 1
+fi
+echo "grub.cfg verified OK"
 
 # Clean up mounts
 umount "$MOUNT_DIR/dev/pts" 2>/dev/null || true
