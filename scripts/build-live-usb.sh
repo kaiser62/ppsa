@@ -73,10 +73,10 @@ fi
 if [ -d "$BUILD_DIR" ]; then
     echo -e "${YELLOW}Cleaning previous build...${NC}"
     # Clean up any mounts still there
+    umount "$ROOTFS_DIR/dev/pts" 2>/dev/null || true
     umount "$ROOTFS_DIR/dev" 2>/dev/null || true
     umount "$ROOTFS_DIR/proc" 2>/dev/null || true
     umount "$ROOTFS_DIR/sys" 2>/dev/null || true
-    rm -rf "$BUILD_DIR"
 fi
 
 mkdir -p "$ROOTFS_DIR"
@@ -94,10 +94,12 @@ debootstrap --arch=amd64 --include="ca-certificates,curl,sudo,locales,git,wget" 
 # =============================================================================
 echo -e "${GREEN}[3/7] Configuring system inside chroot...${NC}"
 
-# Mount necessary filesystems
+# Mount necessary filesystems (pts needed to suppress debconf warnings)
 mount --bind /dev "$ROOTFS_DIR/dev"
 mount --bind /proc "$ROOTFS_DIR/proc"
 mount --bind /sys "$ROOTFS_DIR/sys"
+mkdir -p "$ROOTFS_DIR/dev/pts"
+mount -t devpts devpts "$ROOTFS_DIR/dev/pts" 2>/dev/null || true
 
 # Write the chroot setup script
 cat > "$ROOTFS_DIR/tmp/setup.sh" <<'CHROOTEOF'
@@ -140,8 +142,8 @@ apt-get install -y -qq linux-image-amd64 linux-headers-amd64 firmware-linux firm
 # Use -bin packages to avoid Conflicts between grub-pc and grub-efi-amd64
 apt-get install -y -qq grub-pc-bin grub-efi-amd64-bin grub2-common
 
-# Docker
-apt-get install -y -qq docker.io docker-compose-v2 containerd
+# Docker (compose v2 included in docker.io in Trixie)
+apt-get install -y -qq docker.io containerd
 
 # Networking + VPN
 apt-get install -y -qq wireguard wireguard-tools openresolv
@@ -236,6 +238,7 @@ ln -sf /opt/ppsa/scripts/first-boot.sh "$ROOTFS_DIR/usr/local/bin/ppsa-setup"
 
 # --- Clean up mounts ---
 echo -e "${GREEN}[5/7] Cleaning up chroot mounts...${NC}"
+umount "$ROOTFS_DIR/dev/pts" 2>/dev/null || true
 umount "$ROOTFS_DIR/dev" 2>/dev/null || true
 umount "$ROOTFS_DIR/proc" 2>/dev/null || true
 umount "$ROOTFS_DIR/sys" 2>/dev/null || true
@@ -292,6 +295,7 @@ if [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" ]; then
 fi
 
 # Clean up mounts
+umount "$MOUNT_DIR/dev/pts" 2>/dev/null || true
 umount "$MOUNT_DIR/dev" 2>/dev/null || true
 umount "$MOUNT_DIR/proc" 2>/dev/null || true
 umount "$MOUNT_DIR/sys" 2>/dev/null || true
