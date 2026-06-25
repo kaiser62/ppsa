@@ -125,9 +125,11 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export LC_ALL=C
 
-# --- Locale ---
-locale-gen en_US.UTF-8
+# --- Locale (uncomment in locale.gen first, then generate) ---
+sed -i 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+locale-gen
 echo "LANG=en_US.UTF-8" > /etc/default/locale
+echo "LC_ALL=en_US.UTF-8" >> /etc/default/locale
 
 # --- Hostname ---
 echo "ppsa" > /etc/hostname
@@ -171,7 +173,7 @@ apt-get install -y -qq \
     openssh-server nftables rsync \
     python3 python3-pip python3-venv \
     sudo curl wget vim-tiny lsof \
-    cloud-guest-utils
+    cloud-guest-utils policykit-1
 
 # Clean up
 apt-get clean
@@ -186,9 +188,10 @@ useradd -m -s /bin/bash -G sudo artho
 echo "artho:arthoroy" | chpasswd
 passwd -d root 2>/dev/null || true  # no root password, use sudo
 
-# --- SSH: allow password auth for first setup, add alt port ---
+# --- SSH: allow password auth for first setup, add alt port, disable DNS lookups ---
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 echo "Port 10022" >> /etc/ssh/sshd_config
+echo "UseDNS no" >> /etc/ssh/sshd_config
 
 # --- Enable services ---
 systemctl enable docker
