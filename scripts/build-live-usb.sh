@@ -275,6 +275,10 @@ ROOT_PART="${LOOP_DEV}p2"
 mkfs.fat -F 32 -n "PPSA_BOOT" "$EFI_PART"
 mkfs.ext4 -F -L "PPSA_ROOT" "$ROOT_PART"
 
+# Capture root partition UUID (used later to fix grub.cfg)
+ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
+echo "Root partition UUID: $ROOT_UUID"
+
 # Mount and copy rootfs
 MOUNT_DIR="$BUILD_DIR/mnt"
 mkdir -p "$MOUNT_DIR"
@@ -301,6 +305,34 @@ GRUBEOF
 if [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" ]; then
     mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
     cp "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" "$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTx64.EFI"
+fi
+
+# Fix grub.cfg: replace any /dev/loop* root references with UUID
+# (update-grub runs inside the chroot where root is on a loop device)
+if [ -f "$MOUNT_DIR/boot/grub/grub.cfg" ]; then
+    echo "Fixing grub.cfg root device (using UUID=$ROOT_UUID)..."
+    cp "$MOUNT_DIR/boot/grub/grub.cfg" "$MOUNT_DIR/boot/grub/grub.cfg.bak"
+    sed -i "s|root=/dev/loop[^ ]*|root=UUID=$ROOT_UUID|g" "$MOUNT_DIR/boot/grub/grub.cfg"
+    # Debug: show generated config head
+    echo "--- /boot/grub/grub.cfg (first 15 lines) ---"
+    head -15 "$MOUNT_DIR/boot/grub/grub.cfg"
+    echo "---"
+    # Verify UUID is in the file
+    if grep -q "$ROOT_UUID" "$MOUNT_DIR/boot/grub/grub.cfg"; then
+        echo "OK: UUID found in grub.cfg"
+    else
+        echo "WARNING: UUID $ROOT_UUID not found in grub.cfg after sed fix"
+    fi
+    # Verify no /dev/loop references remain
+    if grep -q "/dev/loop" "$MOUNT_DIR/boot/grub/grub.cfg"; then
+        echo "ERROR: /dev/loop references still present in grub.cfg!"
+        grep "/dev/loop" "$MOUNT_DIR/boot/grub/grub.cfg"
+        exit 1
+    fi
+    echo "grub.cfg verified OK"
+else
+    echo "ERROR: /boot/grub/grub.cfg not found after update-grub!"
+    exit 1
 fi
 
 # Clean up mounts
