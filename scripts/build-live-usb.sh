@@ -173,7 +173,7 @@ apt-get install -y -qq \
     openssh-server nftables rsync \
     python3 python3-pip python3-venv \
     sudo curl wget vim-tiny lsof \
-    cloud-guest-utils policykit-1
+    cloud-guest-utils polkitd
 
 # Clean up
 apt-get clean
@@ -192,6 +192,15 @@ passwd -d root 2>/dev/null || true  # no root password, use sudo
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 echo "Port 10022" >> /etc/ssh/sshd_config
 echo "UseDNS no" >> /etc/ssh/sshd_config
+echo "ListenAddress 0.0.0.0" >> /etc/ssh/sshd_config
+
+# Ensure SSH waits for network to be fully online before binding
+mkdir -p /etc/systemd/system/ssh.service.d
+cat > /etc/systemd/system/ssh.service.d/network.conf <<EOF
+[Unit]
+After=network-online.target
+Wants=network-online.target
+EOF
 
 # --- Enable services ---
 systemctl enable docker
