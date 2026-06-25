@@ -207,6 +207,12 @@ Name=en*
 DHCP=ipv4
 NETEOF
 
+# --- Filesystem table (needed so systemd-remount-fs knows to remount root rw) ---
+cat > /etc/fstab <<FSTABEOF
+# PPSA root filesystem
+LABEL=PPSA_ROOT / ext4 defaults,errors=remount-ro 0 1
+FSTABEOF
+
 # --- GRUB config (create default, -bin packages don't ship it) ---
 cat > /etc/default/grub <<'GRUBEOF'
 GRUB_DEFAULT=0
