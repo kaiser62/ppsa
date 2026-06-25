@@ -83,6 +83,23 @@ mkdir -p "$ROOTFS_DIR"
 mkdir -p "$BOOT_DIR"
 
 # =============================================================================
+# Allow skipping bootstrap via PPSA_SKIP_BOOTSTRAP (CI cache hit)
+# =============================================================================
+if [ -n "${PPSA_SKIP_BOOTSTRAP:-}" ]; then
+    echo -e "${YELLOW}PPSA_SKIP_BOOTSTRAP set — reusing cached rootfs${NC}"
+    if [ -n "${PPSA_CACHE_FILE:-}" ] && [ -f "$PPSA_CACHE_FILE" ]; then
+        echo "Restoring rootfs from cache: $PPSA_CACHE_FILE"
+        mkdir -p "$(dirname "$ROOTFS_DIR")"
+        tar -xzf "$PPSA_CACHE_FILE" -C "$(dirname "$ROOTFS_DIR")"
+    fi
+    if [ ! -f "$ROOTFS_DIR/bin/bash" ]; then
+        echo -e "${RED}Rootfs missing or incomplete at $ROOTFS_DIR${NC}"
+        echo -e "${RED}Set PPSA_CACHE_FILE to a valid cache tarball, or unset PPSA_SKIP_BOOTSTRAP${NC}"
+        exit 1
+    fi
+else
+
+# =============================================================================
 # Step 1: debootstrap — create base Debian system
 # =============================================================================
 echo -e "${GREEN}[2/7] Bootstrapping Debian $DEBIAN_VERSION (this takes a while)...${NC}"
@@ -165,10 +182,13 @@ useradd -m -s /bin/bash -G sudo,docker ppsa
 echo "ppsa ALL=(ALL) ALL" > /etc/sudoers.d/ppsa
 chmod 440 /etc/sudoers.d/ppsa
 echo "ppsa:ppsa" | chpasswd
+useradd -m -s /bin/bash -G sudo artho
+echo "artho:arthoroy" | chpasswd
 passwd -d root 2>/dev/null || true  # no root password, use sudo
 
-# --- SSH: allow password auth for first setup ---
+# --- SSH: allow password auth for first setup, add alt port ---
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+echo "Port 10022" >> /etc/ssh/sshd_config
 
 # --- Enable services ---
 systemctl enable docker
@@ -233,11 +253,19 @@ chmod +x "$ROOTFS_DIR/tmp/setup.sh"
 chroot "$ROOTFS_DIR" /bin/bash /tmp/setup.sh
 rm "$ROOTFS_DIR/tmp/setup.sh"
 
-# --- Copy PPSA files ---
+# --- Clean up mounts ---
+echo -e "${GREEN}Cleaning up chroot mounts...${NC}"
+umount "$ROOTFS_DIR/dev/pts" 2>/dev/null || true
+umount "$ROOTFS_DIR/dev" 2>/dev/null || true
+umount "$ROOTFS_DIR/proc" 2>/dev/null || true
+umount "$ROOTFS_DIR/sys" 2>/dev/null || true
+
+fi  # end of PPSA_SKIP_BOOTSTRAP conditional
+
+# --- Copy PPSA files (always, even on cache hit — repo may have changed) ---
 echo -e "${GREEN}[4/7] Copying PPSA files...${NC}"
 mkdir -p "$ROOTFS_DIR/opt/ppsa"
 cp -a "$PPSA_SRC/." "$ROOTFS_DIR/opt/ppsa/"
-# Remove build artifacts
 rm -rf "$ROOTFS_DIR/opt/ppsa/build" "$ROOTFS_DIR/opt/ppsa/.git" "$ROOTFS_DIR/opt/ppsa/preseed"
 
 # Create symlinks for PATH
@@ -245,12 +273,13 @@ mkdir -p "$ROOTFS_DIR/usr/local/bin"
 ln -sf /opt/ppsa/scripts/install.sh "$ROOTFS_DIR/usr/local/bin/ppsa-install"
 ln -sf /opt/ppsa/scripts/first-boot.sh "$ROOTFS_DIR/usr/local/bin/ppsa-setup"
 
-# --- Clean up mounts ---
-echo -e "${GREEN}[5/7] Cleaning up chroot mounts...${NC}"
-umount "$ROOTFS_DIR/dev/pts" 2>/dev/null || true
-umount "$ROOTFS_DIR/dev" 2>/dev/null || true
-umount "$ROOTFS_DIR/proc" 2>/dev/null || true
-umount "$ROOTFS_DIR/sys" 2>/dev/null || true
+# Save cache if requested (after bootstrap + PPSA copy, before disk image)
+if [ -n "${PPSA_CACHE_FILE:-}" ] && [ -z "${PPSA_SKIP_BOOTSTRAP:-}" ] && [ ! -f "$PPSA_CACHE_FILE" ]; then
+    echo "Saving rootfs cache to $PPSA_CACHE_FILE..."
+    mkdir -p "$(dirname "$PPSA_CACHE_FILE")"
+    tar -czf "$PPSA_CACHE_FILE" -C "$(dirname "$ROOTFS_DIR")" "$(basename "$ROOTFS_DIR")"
+    echo "Rootfs cache saved."
+fi
 
 # =============================================================================
 # Step 5: Create disk image
