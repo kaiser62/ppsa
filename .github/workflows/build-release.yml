@@ -51,9 +51,7 @@ jobs:
       - name: Compress image
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          chmod 644 "ppsa-usb-${VER}.img"
-          xz -9 -T0 "ppsa-usb-${VER}.img" 2>/dev/null || \
-          xz -9 "ppsa-usb-${VER}.img" 2>/dev/null  # fallback single-thread
+          sudo xz -9 -T0 "ppsa-usb-${VER}.img"
 
       - name: Generate checksum
         run: |
