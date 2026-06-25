@@ -336,6 +336,21 @@ if [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" ]; then
     cp "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" "$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTx64.EFI"
 fi
 
+# Place a forwarding grub.cfg on the ESP so GRUB finds a config on first boot.
+# GRUB's EFI binary has prefix=/boot/grub and starts with root=ESP (gpt1).
+# Without this, it looks for /boot/grub/grub.cfg on the ESP — which doesn't exist.
+# This tiny config searches the root partition by UUID and loads the real one.
+if [ -n "$ROOT_UUID" ]; then
+    mkdir -p "$MOUNT_DIR/boot/efi/boot/grub"
+    # Write ROOT_UUID into the heredoc via the outer shell, keep rest literal
+    cat > "$MOUNT_DIR/boot/efi/boot/grub/grub.cfg" <<ESPEOF
+search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+set prefix=(\$root)/boot/grub
+configfile \$prefix/grub.cfg
+ESPEOF
+    echo "ESP forwarding grub.cfg written (UUID=$ROOT_UUID)."
+fi
+
 # Fix grub.cfg: replace any /dev/loop* root references with UUID,
 # and generate manual entries if 10_linux produced nothing
 # (grub-probe can fail on loop devices inside the chroot)
