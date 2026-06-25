@@ -184,7 +184,16 @@ Name=en*
 DHCP=ipv4
 NETEOF
 
-# --- GRUB config ---
+# --- GRUB config (create default, -bin packages don't ship it) ---
+cat > /etc/default/grub <<'GRUBEOF'
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=5
+GRUB_CMDLINE_LINUX=""
+GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+GRUB_TERMINAL=console
+GRUB_DISABLE_RECOVERY=true
+GRUB_DISABLE_OS_PROBER=true
+GRUBEOF
 sed -i 's/GRUB_TIMEOUT=5/GRUB_TIMEOUT=2/' /etc/default/grub
 sed -i 's/GRUB_CMDLINE_LINUX=""/GRUB_CMDLINE_LINUX="quiet mitigations=off"/' /etc/default/grub
 
