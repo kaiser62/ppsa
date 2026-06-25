@@ -1,0 +1,88 @@
+# =============================================================================
+# PPSA - Build & Release USB Image
+# =============================================================================
+# Builds a bootable Debian disk image (.img) for USB SSD.
+# Triggered by:
+#   - Git tag v*  → creates a GitHub Release with the compressed image
+#   - Manual dispatch → creates a draft release for testing
+#
+# The runner needs root (for losetup/mount/chroot) and the build tools.
+# =============================================================================
+
+name: Build USB Image
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string (e.g., v1.0.0-test)'
+        required: true
+        default: 'v0.0.0-dev'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            debootstrap parted e2fsprogs dosfstools \
+            grub-pc-bin grub-efi-amd64-bin rsync cpio \
+            xz-utils util-linux
+
+      - name: Build USB image
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          sudo bash scripts/build-live-usb.sh \
+            --output "ppsa-usb-${VER}.img"
+
+      - name: Compress image
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          xz -9 -T0 "ppsa-usb-${VER}.img"
+
+      - name: Generate checksum
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          F="ppsa-usb-${VER}.img.xz"
+          sha256sum "$F" > "${F}.sha256"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ppsa-usb-*
+          tag_name: ${{ github.ref_name || inputs.version }}
+          name: PPSA ${{ github.ref_name || inputs.version }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          prerelease: ${{ contains(github.ref_name || inputs.version, '-') }}
+          body: |
+            ## PPSA ${{ github.ref_name || inputs.version }}
+
+            ### Download
+            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.xz` — compressed disk image
+            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.xz.sha256` — SHA-256 checksum
+
+            ### Usage
+            1. Download the `.img.xz` file
+            2. Extract with 7-Zip or: `xz -d ppsa-usb-*.img.xz`
+            3. Write to a USB SSD (min 32GB) using Rufus (DD Image mode) or `dd`
+            4. Boot from the USB — auto-resizes to fill the drive
+            5. Find the IP: check your router's DHCP leases
+            6. Open `http://(ip):8080` in a browser
+            7. Run `ppsa-setup` on the console to configure the server
+
+            ### System Requirements
+            - USB SSD, 32GB minimum (64GB+ recommended)
+            - UEFI or BIOS boot (both supported)
+            - At least 2GB RAM (4GB+ recommended for Palworld)

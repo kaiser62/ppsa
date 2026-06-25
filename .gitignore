@@ -1,0 +1,27 @@
+# Build output
+build/
+*.img
+*.img.xz
+*.img.xz.sha256
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+env/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+.docker/
+
+# Git
+*.orig

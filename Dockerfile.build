@@ -1,0 +1,38 @@
+# =============================================================================
+# PPSA - Builder Image
+# =============================================================================
+# Builds a bootable Debian disk image for USB SSD.
+# Used by build-usb.bat as a WSL alternative.
+#
+# Build:   docker build -t ppsa-builder -f Dockerfile.build .
+# Run:     docker run --privileged -v "%cd%":/workspace -w /workspace ppsa-builder \
+#            bash scripts/build-live-usb.sh --output /workspace/build/ppsa-usb.img
+# =============================================================================
+
+FROM debian:bookworm-slim
+
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+        debootstrap \
+        parted \
+        e2fsprogs \
+        dosfstools \
+        grub-pc-bin \
+        grub-efi-amd64-bin \
+        rsync \
+        cpio \
+        xz-utils \
+        wget \
+        curl \
+        ca-certificates \
+        git \
+        util-linux \
+        && \
+    rm -rf /var/lib/apt/lists/*
+
+# Verify key tools available
+RUN for cmd in debootstrap parted mkfs.ext4 mkfs.fat grub-install rsync cpio wget curl losetup; do \
+        command -v "$cmd" >/dev/null 2>&1 || echo "MISSING: $cmd"; \
+    done && echo "All tools present"
+
+ENTRYPOINT ["bash"]

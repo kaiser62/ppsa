@@ -1,0 +1,9 @@
+# PPSA Web UI - Python Dependencies
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+httpx==0.28.*
+python-multipart==0.0.*
+passlib[bcrypt]==1.7.*
+python-jose[cryptography]==3.3.*
+jinja2==3.1.*
+docker==7.1.*

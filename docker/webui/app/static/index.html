@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PPSA - Palworld Server Appliance</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+
+  /* Login */
+  #login-screen {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh;
+  }
+  .login-card {
+    background: var(--surface);
+    padding: 2rem; border-radius: 12px; width: 100%; max-width: 400px;
+  }
+  .login-card h1 { margin-bottom: 0.5rem; }
+  .login-card p { color: var(--text-muted); margin-bottom: 1.5rem; }
+  .login-card input { width: 100%; padding: 0.75rem; margin-bottom: 1rem;
+    border: 1px solid var(--surface2); border-radius: 8px;
+    background: var(--bg); color: var(--text); font-size: 1rem; }
+  .login-card button { width: 100%; }
+
+  /* Header */
+  header {
+    background: var(--surface);
+    padding: 0.75rem 1rem; border-radius: 12px; margin-bottom: 1rem;
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 0.5rem;
+  }
+  header h1 { font-size: 1.25rem; }
+  .nav { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+  .nav button {
+    background: none; border: none; color: var(--text-muted);
+    padding: 0.4rem 0.75rem; border-radius: 8px; cursor: pointer;
+    transition: all 0.2s; font-size: 0.8rem; white-space: nowrap;
+  }
+  .nav button:hover, .nav button.active {
+    background: var(--surface2); color: var(--text);
+  }
+
+  /* Cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .card {
+    background: var(--surface); padding: 1.25rem; border-radius: 12px;
+  }
+  .card h3 { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 0.5rem; }
+  .card .value { font-size: 1.5rem; font-weight: 700; }
+  .card .sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+  .status-ok { color: var(--green); }
+  .status-error { color: var(--red); }
+  .status-warn { color: var(--yellow); }
+
+  /* Buttons */
+  button, .btn {
+    background: var(--primary); color: #fff; border: none;
+    padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;
+    font-size: 0.875rem; transition: background 0.2s;
+  }
+  button:hover { background: var(--primary-dark); }
+  button.danger { background: var(--red); }
+  button.danger:hover { background: #dc2626; }
+  button.outline {
+    background: none; border: 1px solid var(--surface2); color: var(--text);
+  }
+  button.outline:hover { background: var(--surface2); }
+  button.small { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+  .btn-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.6rem 0.5rem;
+    border-bottom: 1px solid var(--surface2); font-size: 0.875rem; }
+  th { color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; }
+
+  /* Sections */
+  .section { background: var(--surface); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+  .section h2 { font-size: 1rem; margin-bottom: 1rem; color: var(--text-muted); }
+
+  /* Forms */
+  .form-row { display: flex; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+  .form-group { flex: 1; min-width: 200px; }
+  .form-group label { display: block; color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.25rem; }
+  .form-group input, .form-group select {
+    width: 100%; padding: 0.5rem; border: 1px solid var(--surface2); border-radius: 6px;
+    background: var(--bg); color: var(--text); font-size: 0.875rem;
+  }
+
+  /* Config editor */
+  textarea.config-editor {
+    width: 100%; min-height: 200px;
+    background: var(--bg); color: var(--text); border: 1px solid var(--surface2);
+    border-radius: 8px; padding: 0.75rem; font-family: 'Courier New', monospace;
+    font-size: 0.8rem; resize: vertical;
+  }
+
+  /* Alerts */
+  .alert { padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; display: none; }
+  .alert.show { display: block; }
+  .alert-success { background: #14532d; color: var(--green); }
+  .alert-error { background: #450a0a; color: var(--red); }
+  .alert-info { background: #1e3a5f; color: var(--primary); }
+
+  /* Pages */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--surface); padding: 1.5rem; border-radius: 12px;
+    width: 90%; max-width: 500px; }
+  .modal h2 { margin-bottom: 1rem; }
+  .modal label { display: block; color: var(--text-muted); font-size: 0.875rem;
+    margin-bottom: 0.25rem; }
+  .modal input, .modal textarea { width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;
+    border: 1px solid var(--surface2); border-radius: 6px;
+    background: var(--bg); color: var(--text); }
+
+  /* Bar chart */
+  .bar-bg { background: var(--surface2); border-radius: 4px; height: 8px; overflow: hidden; margin-top: 0.25rem; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+  .bar-fill.green { background: var(--green); }
+  .bar-fill.yellow { background: var(--yellow); }
+  .bar-fill.red { background: var(--red); }
+
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; }
+  .badge-green { background: #14532d; color: var(--green); }
+  .badge-yellow { background: #422006; color: var(--yellow); }
+  .badge-red { background: #450a0a; color: var(--red); }
+
+  .logout-btn {
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    font-size: 0.875rem;
+  }
+  .logout-btn:hover { color: var(--red); }
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>PPSA</h1>
+    <p>Palworld Server Appliance</p>
+    <input type="text" id="login-user" placeholder="Username" value="admin">
+    <input type="password" id="login-pass" placeholder="Password">
+    <button onclick="login()">Sign In</button>
+    <p id="login-error" style="color:var(--red);margin-top:1rem;display:none"></p>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app" style="display:none">
+  <div class="container">
+    <header>
+      <h1>PPSA</h1>
+      <div class="nav">
+        <button class="active" onclick="showPage('dashboard',event)">Dashboard</button>
+        <button onclick="showPage('players',event)">Players</button>
+        <button onclick="showPage('controls',event)">Controls</button>
+        <button onclick="showPage('config',event)">Config</button>
+        <button onclick="showPage('system',event)">System</button>
+        <button onclick="showPage('backup',event)">Backup</button>
+        <button onclick="showPage('wireguard',event)">WireGuard</button>
+        <button onclick="showPage('settings',event)">Settings</button>
+      </div>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </header>
+
+    <!-- Dashboard -->
+    <div id="page-dashboard" class="page active">
+      <div class="grid" id="dash-stats">
+        <div class="card"><h3>Players</h3><div class="value" id="stat-players">-</div></div>
+        <div class="card"><h3>Server FPS</h3><div class="value" id="stat-fps">-</div></div>
+        <div class="card"><h3>Uptime</h3><div class="value" id="stat-uptime">-</div></div>
+        <div class="card"><h3>Version</h3><div class="value" id="stat-version" style="font-size:1rem">-</div></div>
+      </div>
+      <div class="section">
+        <h2>Connected Players</h2>
+        <table><thead><tr><th>Name</th><th>Steam ID</th><th>Level</th><th>Ping</th></tr></thead>
+          <tbody id="player-table-body"><tr><td colspan="4">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Players -->
+    <div id="page-players" class="page">
+      <div class="section">
+        <h2>Online Players</h2>
+        <table><thead><tr><th>Name</th><th>UserID</th><th>Steam ID</th><th>Level</th><th>Location</th><th>Actions</th></tr></thead>
+          <tbody id="player-mgmt-body"><tr><td colspan="6">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Server Controls -->
+    <div id="page-controls" class="page">
+      <div class="section">
+        <h2>Server Actions</h2>
+        <div class="btn-group">
+          <button onclick="saveWorld()">Save World</button>
+          <button onclick="announceMsg()">Broadcast</button>
+          <button class="danger" onclick="confirmAction('Restart server? Players will be disconnected.', shutdownServer)">Restart</button>
+          <button class="danger" onclick="confirmAction('Stop server immediately?', stopServer)">Stop</button>
+        </div>
+      </div>
+      <div class="section">
+        <h2>Logs</h2>
+        <textarea id="log-viewer" class="config-editor" readonly>Loading...</textarea>
+        <div style="margin-top:0.5rem;display:flex;gap:0.5rem">
+          <button class="small" onclick="refreshLogs()">Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Config -->
+    <div id="page-config" class="page">
+      <div id="config-alert" class="alert"></div>
+      <div class="section">
+        <h2>Server Configuration (.env)</h2>
+        <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:1rem">Changes take effect after restarting the Palworld container.</p>
+        <div class="form-row">
+          <div class="form-group"><label>Server Name</label><input id="cfg-name" placeholder="My Server"></div>
+          <div class="form-group"><label>Max Players</label><input id="cfg-players" type="number" min="1" max="100"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Server Password (blank = public)</label><input id="cfg-password" type="password"></div>
+          <div class="form-group"><label>Admin Password (game)</label><input id="cfg-adminpw" type="password"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Timezone</label><input id="cfg-tz" placeholder="UTC"></div>
+          <div class="form-group"><label>Multithreading</label>
+            <select id="cfg-mt"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>RCON Enabled</label>
+            <select id="cfg-rcon"><option value="true">Yes</option><option value="false">No</option></select>
+          </div>
+          <div class="form-group"><label>Community Server</label>
+            <select id="cfg-community"><option value="false">No</option><option value="true">Yes</option></select>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button onclick="saveEnv()">Save Changes</button>
+          <button class="outline" onclick="restartPalworld()">Restart Palworld Container</button>
+          <button class="outline" onclick="loadEnv()">Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- System -->
+    <div id="page-system" class="page">
+      <div class="grid">
+        <div class="card"><h3>CPU Load</h3><div class="value" id="sys-cpu">-</div><div class="sub" id="sys-cpu-detail"></div></div>
+        <div class="card"><h3>Memory</h3><div class="value" id="sys-mem">-</div><div class="bar-bg"><div class="bar-fill" id="sys-mem-bar" style="width:0%"></div></div></div>
+        <div class="card"><h3>Disk</h3><div class="value" id="sys-disk">-</div><div class="bar-bg"><div class="bar-fill" id="sys-disk-bar" style="width:0%"></div></div></div>
+        <div class="card"><h3>Uptime</h3><div class="value" id="sys-uptime">-</div></div>
+      </div>
+      <div class="section">
+        <h2>Docker Containers</h2>
+        <table><thead><tr><th>Name</th><th>Status</th><th>Image</th></tr></thead>
+          <tbody id="container-body"><tr><td colspan="3">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Backup -->
+    <div id="page-backup" class="page">
+      <div id="backup-alert" class="alert"></div>
+      <div class="grid">
+        <div class="card"><h3>Last Backup</h3><div class="value" id="backup-last" style="font-size:1rem">-</div></div>
+        <div class="card"><h3>Backup Files</h3><div class="value" id="backup-count">-</div></div>
+        <div class="card"><h3>Schedule</h3><div class="value" id="backup-schedule" style="font-size:1rem">-</div></div>
+      </div>
+      <div class="section">
+        <h2>Backup Configuration</h2>
+        <div class="form-row">
+          <div class="form-group"><label>Cron Schedule</label><input id="bk-cron" placeholder="0 3 * * *"></div>
+          <div class="form-group"><label>Retention Days</label><input id="bk-retention" type="number" min="1" max="365"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Discord Webhook URL (optional)</label><input id="bk-webhook" placeholder="https://discord.com/api/webhooks/..."></div>
+        </div>
+        <div class="btn-group">
+          <button onclick="saveBackupConfig()">Save Backup Config</button>
+          <button class="outline" onclick="triggerBackup()">Backup Now</button>
+        </div>
+      </div>
+      <div class="section">
+        <h2>Backup Archives</h2>
+        <table><thead><tr><th>File</th><th>Size</th><th>Date</th></tr></thead>
+          <tbody id="backup-files-body"><tr><td colspan="3">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- WireGuard -->
+    <div id="page-wireguard" class="page">
+      <div id="wg-alert" class="alert"></div>
+
+      <!-- Status -->
+      <div class="section">
+        <h2>Connection Status</h2>
+        <div class="grid">
+          <div class="card"><h3>Tunnel</h3><div class="value" id="wg-status-text">Checking...</div><div class="sub" id="wg-peer-count"></div></div>
+          <div class="card"><h3>Downloaded</h3><div class="value" id="wg-transfer-rx">-</div><div class="sub">received</div></div>
+          <div class="card"><h3>Uploaded</h3><div class="value" id="wg-transfer-tx">-</div><div class="sub">sent</div></div>
+          <div class="card"><h3>Handshake</h3><div class="value" id="wg-handshake" style="font-size:0.9rem">-</div><div class="sub">ago</div></div>
+        </div>
+        <div class="btn-group" style="margin-top:0.5rem">
+          <button class="outline small" onclick="wgStatus()">Refresh Status</button>
+          <button class="danger" id="wg-disconnect-btn" style="display:none" onclick="wgDisconnect()">Disconnect</button>
+        </div>
+      </div>
+
+      <!-- Public Key -->
+      <div class="section" style="padding-top:0">
+        <div class="card" style="margin:0">
+          <h3>PPSA Public Key</h3>
+          <div class="value" id="wg-ppsa-key" style="font-size:0.8rem;word-break:break-all">-</div>
+        </div>
+      </div>
+
+      <!-- Config -->
+      <div class="section" id="wg-config-section">
+        <h2>Configure Tunnel</h2>
+        <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:1rem">
+          Set up a WireGuard tunnel to an Oracle VPS gateway. 
+          First run <code>oracle/vps-setup.sh</code> on the VPS to get its public key and endpoint.
+        </p>
+        <div class="form-row">
+          <div class="form-group"><label>VPS Endpoint (IP:51820)</label><input id="wg-endpoint" placeholder="203.0.113.10:51820"></div>
+          <div class="form-group"><label>VPS Public Key</label><input id="wg-vps-key" placeholder="Base64 public key from VPS setup"></div>
+        </div>
+        <button id="wg-connect-btn" onclick="wgConnect()">Connect</button>
+      </div>
+
+      <!-- Detail -->
+      <div class="section" id="wg-detail-section" style="display:none">
+        <h2>Interface Detail</h2>
+        <textarea id="wg-dump" class="config-editor" style="min-height:150px" readonly></textarea>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div id="page-settings" class="page">
+      <div id="settings-alert" class="alert"></div>
+      <div class="section">
+        <h2>Change Admin Password</h2>
+        <div class="form-row">
+          <div class="form-group"><label>Current Password</label><input type="password" id="pw-current"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>New Password (min 6 chars)</label><input type="password" id="pw-new"></div>
+          <div class="form-group"><label>Confirm New Password</label><input type="password" id="pw-confirm"></div>
+        </div>
+        <button onclick="changePassword()">Update Password</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Confirm -->
+<div id="modal" class="modal-overlay">
+  <div class="modal">
+    <h2 id="modal-title">Confirm</h2>
+    <p id="modal-text">Are you sure?</p>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+      <button class="outline" onclick="closeModal()">Cancel</button>
+      <button class="danger" id="modal-confirm" onclick="closeModal()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Broadcast -->
+<div id="modal-broadcast" class="modal-overlay">
+  <div class="modal">
+    <h2>Broadcast Message</h2>
+    <label>Message</label>
+    <input type="text" id="broadcast-text" placeholder="Server message...">
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+      <button class="outline" onclick="closeModal('modal-broadcast')">Cancel</button>
+      <button onclick="doBroadcast()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- State ---
+let token = localStorage.getItem('ppsa_token');
+let refreshInterval;
+
+// --- Auth ---
+async function login() {
+  const user = document.getElementById('login-user').value;
+  const pass = document.getElementById('login-pass').value;
+  try {
+    const res = await fetch('/api/login', {
+      headers: { 'Authorization': 'Basic ' + btoa(user + ':' + pass) }
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Login failed');
+    token = data.token;
+    localStorage.setItem('ppsa_token', token);
+    showApp();
+  } catch(e) {
+    document.getElementById('login-error').textContent = e.message;
+    document.getElementById('login-error').style.display = 'block';
+  }
+}
+
+function logout() {
+  localStorage.removeItem('ppsa_token');
+  token = null;
+  clearInterval(refreshInterval);
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+// --- API ---
+async function api(path, opts = {}) {
+  const headers = { ...opts.headers };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(path, { ...opts, headers });
+  if (res.status === 401) { logout(); throw new Error('Session expired'); }
+  return res.json();
+}
+
+// --- App ---
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  refreshDashboard();
+  refreshInterval = setInterval(refreshDashboard, 10000);
+}
+
+function showPage(name, ev) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  if (ev) ev.target.classList.add('active');
+  // Lazy load on first visit
+  if (name === 'dashboard') refreshDashboard();
+  if (name === 'players') refreshPlayers();
+  if (name === 'controls') refreshLogs();
+  if (name === 'config') loadEnv();
+  if (name === 'system') refreshSystem();
+  if (name === 'backup') refreshBackup();
+  if (name === 'wireguard') wgStatus();
+}
+
+// --- Dashboard ---
+async function refreshDashboard() {
+  try {
+    const data = await api('/api/dashboard');
+    document.getElementById('stat-players').textContent = data.player_count ?? '-';
+    document.getElementById('stat-fps').textContent = data.metrics?.current_server_fps ?? '-';
+    document.getElementById('stat-uptime').textContent = data.metrics?.server_uptime ?? '-';
+    document.getElementById('stat-version').textContent = data.server?.version ?? '-';
+
+    const tbody = document.getElementById('player-table-body');
+    if (data.players?.length) {
+      tbody.innerHTML = data.players.map(p => `<tr><td>${e(p.name||'')}</td><td>${e(p.steamid||'')}</td><td>${p.level??'-'}</td><td>${p.ping??'-'}</td></tr>`).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="4">No players online</td></tr>';
+    }
+  } catch(e) { console.error('Dashboard:', e); }
+}
+
+// --- Players ---
+async function refreshPlayers() {
+  try {
+    const players = await api('/api/players');
+    const tbody = document.getElementById('player-mgmt-body');
+    if (players?.length) {
+      tbody.innerHTML = players.map(p => `<tr>
+        <td>${e(p.name||'')}</td>
+        <td>${e(p.userid||'')}</td>
+        <td>${e(p.steamid||'')}</td>
+        <td>${p.level??'-'}</td>
+        <td>${e(p.location||'')}</td>
+        <td>
+          <button class="small" onclick="kickPlayer('${e(p.userid)}')">Kick</button>
+          <button class="small danger" onclick="banPlayer('${e(p.userid)}')">Ban</button>
+        </td>
+      </tr>`).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="6">No players online</td></tr>';
+    }
+  } catch(e) { console.error(e); }
+}
+
+// --- Actions ---
+async function saveWorld() {
+  await api('/api/server/save', { method: 'POST' });
+  showAlert('World saved!', 'success', 'config-alert');
+}
+
+function announceMsg() {
+  document.getElementById('modal-broadcast').classList.add('show');
+}
+
+async function doBroadcast() {
+  const msg = document.getElementById('broadcast-text').value;
+  if (!msg) return;
+  await api('/api/server/announce?message=' + encodeURIComponent(msg), { method: 'POST' });
+  closeModal('modal-broadcast');
+  document.getElementById('broadcast-text').value = '';
+}
+
+async function shutdownServer() {
+  await api('/api/server/shutdown?waittime=30&message=Server+restarting', { method: 'POST' });
+}
+
+async function stopServer() {
+  await api('/api/server/stop', { method: 'POST' });
+}
+
+async function kickPlayer(uid) {
+  if (!confirm('Kick player ' + uid + '?')) return;
+  await api('/api/players/kick', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({userid: uid}) });
+  refreshPlayers();
+}
+
+async function banPlayer(uid) {
+  if (!confirm('Ban player ' + uid + '? This is permanent.')) return;
+  await api('/api/players/ban', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({userid: uid}) });
+  refreshPlayers();
+}
+
+// --- Logs ---
+async function refreshLogs() {
+  const el = document.getElementById('log-viewer');
+  try {
+    const data = await api('/api/logs?tail=100');
+    el.value = data.lines?.join('\n') || 'No logs';
+    el.scrollTop = el.scrollHeight;
+  } catch(e) {
+    el.value = 'Error loading logs: ' + e.message;
+  }
+}
+
+// --- Config / .env ---
+async function loadEnv() {
+  try {
+    const data = await api('/api/env');
+    document.getElementById('cfg-name').value = data.SERVER_NAME || '';
+    document.getElementById('cfg-players').value = data.MAX_PLAYERS || '16';
+    document.getElementById('cfg-password').value = data.SERVER_PASSWORD || '';
+    document.getElementById('cfg-adminpw').value = data.ADMIN_PASSWORD || '';
+    document.getElementById('cfg-tz').value = data.TZ || 'UTC';
+    document.getElementById('cfg-mt').value = (data.MULTITHREADING || 'true').toLowerCase();
+    document.getElementById('cfg-rcon').value = (data.RCON_ENABLED || 'true').toLowerCase();
+    document.getElementById('cfg-community').value = (data.COMMUNITY || 'false').toLowerCase();
+  } catch(e) {
+    document.getElementById('config-alert').textContent = 'Error loading config';
+    document.getElementById('config-alert').className = 'alert alert-error show';
+  }
+}
+
+async function saveEnv() {
+  const body = {
+    SERVER_NAME: document.getElementById('cfg-name').value,
+    MAX_PLAYERS: document.getElementById('cfg-players').value,
+    SERVER_PASSWORD: document.getElementById('cfg-password').value,
+    ADMIN_PASSWORD: document.getElementById('cfg-adminpw').value,
+    TZ: document.getElementById('cfg-tz').value,
+    MULTITHREADING: document.getElementById('cfg-mt').value,
+    RCON_ENABLED: document.getElementById('cfg-rcon').value,
+    COMMUNITY: document.getElementById('cfg-community').value,
+  };
+  try {
+    await api('/api/env', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    showAlert('Config saved. Restart the Palworld container to apply changes.', 'success', 'config-alert');
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'config-alert');
+  }
+}
+
+async function restartPalworld() {
+  if (!confirm('Restart Palworld container? Players will be disconnected for ~2 minutes.')) return;
+  try {
+    const data = await api('/api/server/restart', { method: 'POST' });
+    showAlert(data.detail, 'info', 'config-alert');
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'config-alert');
+  }
+}
+
+// --- System ---
+async function refreshSystem() {
+  try {
+    const data = await api('/api/system');
+
+    // CPU
+    document.getElementById('sys-cpu').textContent = data.cpu.load_1m.toFixed(1);
+    document.getElementById('sys-cpu-detail').textContent = data.cpu.cores + ' cores (5m: ' + data.cpu.load_5m.toFixed(1) + ')';
+
+    // Memory
+    const mem = data.memory;
+    document.getElementById('sys-mem').textContent = mem.used_mb + ' / ' + mem.total_mb + ' MB';
+    const memBar = document.getElementById('sys-mem-bar');
+    memBar.style.width = mem.percent + '%';
+    memBar.className = 'bar-fill ' + (mem.percent > 80 ? 'red' : mem.percent > 60 ? 'yellow' : 'green');
+
+    // Disk
+    if (data.disk?.total) {
+      const usedGb = (data.disk.used / 1073741824).toFixed(1);
+      const totalGb = (data.disk.total / 1073741824).toFixed(1);
+      document.getElementById('sys-disk').textContent = usedGb + ' / ' + totalGb + ' GB';
+      const diskPct = parseInt(data.disk.percent || '0');
+      const diskBar = document.getElementById('sys-disk-bar');
+      diskBar.style.width = diskPct + '%';
+      diskBar.className = 'bar-fill ' + (diskPct > 80 ? 'red' : diskPct > 60 ? 'yellow' : 'green');
+    }
+
+    // Uptime
+    const secs = data.uptime_seconds;
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    document.getElementById('sys-uptime').textContent = d + 'd ' + h + 'h';
+
+    // Containers
+    const tbody = document.getElementById('container-body');
+    if (data.containers?.length) {
+      tbody.innerHTML = data.containers.map(c => {
+        const healthy = c.status.includes('healthy') ? 'badge-green' :
+                        c.status.includes('unhealthy') ? 'badge-red' : 'badge-yellow';
+        return `<tr><td>${e(c.name)}</td><td><span class="badge ${healthy}">${e(c.status)}</span></td><td>${e(c.image)}</td></tr>`;
+      }).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="3">No containers</td></tr>';
+    }
+  } catch(e) { console.error('System:', e); }
+}
+
+// --- Backup ---
+async function refreshBackup() {
+  try {
+    const status = await api('/api/backup/status');
+    const config = await api('/api/backup/config');
+
+    document.getElementById('backup-last').textContent = status.last_backup ? new Date(status.last_backup).toLocaleString() : 'Never';
+    document.getElementById('backup-count').textContent = status.file_count;
+    document.getElementById('backup-schedule').textContent = config.BACKUP_SCHEDULE;
+
+    document.getElementById('bk-cron').value = config.BACKUP_SCHEDULE;
+    document.getElementById('bk-retention').value = config.BACKUP_RETENTION_DAYS;
+    document.getElementById('bk-webhook').value = config.DISCORD_WEBHOOK_URL || '';
+
+    const tbody = document.getElementById('backup-files-body');
+    if (status.files?.length) {
+      tbody.innerHTML = status.files.map(f =>
+        `<tr><td>${e(f.name)}</td><td>${(f.size/1048576).toFixed(1)} MB</td><td>${new Date(f.modified).toLocaleString()}</td></tr>`
+      ).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="3">No backups yet</td></tr>';
+    }
+  } catch(e) { console.error('Backup:', e); }
+}
+
+async function saveBackupConfig() {
+  const body = {
+    BACKUP_SCHEDULE: document.getElementById('bk-cron').value,
+    BACKUP_RETENTION_DAYS: document.getElementById('bk-retention').value,
+    DISCORD_WEBHOOK_URL: document.getElementById('bk-webhook').value,
+  };
+  try {
+    await api('/api/env', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    showAlert('Backup config saved. Restart backup container to apply.', 'success', 'backup-alert');
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'backup-alert');
+  }
+}
+
+async function triggerBackup() {
+  document.getElementById('backup-alert').textContent = 'Triggering backup...';
+  document.getElementById('backup-alert').className = 'alert alert-info show';
+  try {
+    const data = await api('/api/backup/trigger', { method: 'POST' });
+    showAlert('Backup triggered: ' + data.detail.slice(0,200), 'success', 'backup-alert');
+    setTimeout(refreshBackup, 2000);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'backup-alert');
+  }
+}
+
+// --- WireGuard ---
+async function wgStatus() {
+  try {
+    const [status, config] = await Promise.all([
+      api('/api/wireguard/status'),
+      api('/api/wireguard/config')
+    ]);
+
+    // Status
+    const el = document.getElementById('wg-status-text');
+    if (status.status === 'active') {
+      el.textContent = 'Connected';
+      el.className = 'value status-ok';
+      document.getElementById('wg-disconnect-btn').style.display = '';
+      document.getElementById('wg-connect-btn').textContent = 'Reconnect';
+    } else if (status.status === 'inactive') {
+      el.textContent = 'Inactive (no handshake)';
+      el.className = 'value status-warn';
+      document.getElementById('wg-disconnect-btn').style.display = '';
+    } else if (status.status === 'not_configured') {
+      el.textContent = 'Not Configured';
+      el.className = 'value status-error';
+      document.getElementById('wg-disconnect-btn').style.display = 'none';
+    } else {
+      el.textContent = status.detail || 'Unknown';
+      el.className = 'value status-error';
+      document.getElementById('wg-disconnect-btn').style.display = 'none';
+    }
+    document.getElementById('wg-peer-count').textContent = (status.peer_count || 0) + ' peers';
+
+    // Transfer & handshake
+    document.getElementById('wg-transfer-rx').textContent = status.transfer_rx || '-';
+    document.getElementById('wg-transfer-tx').textContent = status.transfer_tx || '-';
+    document.getElementById('wg-handshake').textContent = status.latest_handshake || '-';
+
+    // Config / keys
+    if (config.configured) {
+      document.getElementById('wg-endpoint').value = config.config.vps_endpoint || '';
+      document.getElementById('wg-vps-key').value = config.config.vps_public_key || '';
+      document.getElementById('wg-ppsa-key').textContent = config.config.ppsa_public_key || '-';
+    }
+
+    // Detail dump
+    document.getElementById('wg-dump').value = status.detail || '';
+    document.getElementById('wg-detail-section').style.display = status.detail ? '' : 'none';
+  } catch(e) { console.error('WG:', e); }
+}
+
+async function wgConnect() {
+  const endpoint = document.getElementById('wg-endpoint').value.trim();
+  const vpsKey = document.getElementById('wg-vps-key').value.trim();
+
+  if (!endpoint || !vpsKey) {
+    showAlert('Fill in both VPS endpoint and public key', 'error', 'wg-alert');
+    return;
+  }
+
+  document.getElementById('wg-connect-btn').disabled = true;
+  document.getElementById('wg-connect-btn').textContent = 'Connecting...';
+
+  try {
+    const data = await api('/api/wireguard/connect', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({vps_endpoint: endpoint, vps_public_key: vpsKey})
+    });
+
+    if (data.status === 'connected') {
+      showAlert('Tunnel connected! Add this PPSA public key to the VPS:\n' + data.ppsa_public_key, 'success', 'wg-alert');
+    } else {
+      showAlert('Config written. ' + (data.detail || '') + '\nPPSA public key: ' + (data.ppsa_public_key||''), 'info', 'wg-alert');
+    }
+
+    document.getElementById('wg-ppsa-key').textContent = data.ppsa_public_key || '?';
+    setTimeout(wgStatus, 2000);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'wg-alert');
+  } finally {
+    document.getElementById('wg-connect-btn').disabled = false;
+    document.getElementById('wg-connect-btn').textContent = 'Connect';
+  }
+}
+
+async function wgDisconnect() {
+  if (!confirm('Disconnect WireGuard tunnel?')) return;
+  try {
+    await api('/api/wireguard/disconnect', { method: 'POST' });
+    showAlert('Tunnel disconnected.', 'info', 'wg-alert');
+    wgStatus();
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'wg-alert');
+  }
+}
+
+// --- Settings ---
+async function changePassword() {
+  const current = document.getElementById('pw-current').value;
+  const newPw = document.getElementById('pw-new').value;
+  const confirm = document.getElementById('pw-confirm').value;
+
+  if (!current || !newPw) { showAlert('Fill in all fields', 'error', 'settings-alert'); return; }
+  if (newPw !== confirm) { showAlert('New passwords do not match', 'error', 'settings-alert'); return; }
+  if (newPw.length < 6) { showAlert('Password must be at least 6 characters', 'error', 'settings-alert'); return; }
+
+  try {
+    await api('/api/users/password', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({current, new: newPw})
+    });
+    showAlert('Password changed successfully!', 'success', 'settings-alert');
+    document.getElementById('pw-current').value = '';
+    document.getElementById('pw-new').value = '';
+    document.getElementById('pw-confirm').value = '';
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'settings-alert');
+  }
+}
+
+// --- Utilities ---
+function e(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function showAlert(msg, type, id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'alert alert-' + type + ' show';
+  setTimeout(() => el.classList.remove('show'), 8000);
+}
+
+function confirmAction(msg, cb) {
+  document.getElementById('modal-text').textContent = msg;
+  document.getElementById('modal-confirm').onclick = () => { closeModal(); cb(); };
+  document.getElementById('modal').classList.add('show');
+}
+
+function closeModal(id = 'modal') {
+  document.getElementById(id).classList.remove('show');
+}
+
+// --- Init ---
+if (token) showApp();
+</script>
+</body>
+</html>

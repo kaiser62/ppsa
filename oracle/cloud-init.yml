@@ -1,0 +1,97 @@
+#cloud-config
+# =============================================================================
+# PPSA - Oracle Cloud VPS Cloud-Init Configuration
+# =============================================================================
+# This cloud-init script sets up an Oracle Cloud VPS as a WireGuard gateway
+# for the PPSA appliance. It configures:
+#   - WireGuard server (port 51820)
+#   - NAT / port forwarding to the PPSA tunnel client
+#   - Firewall rules (nftables)
+#   - IPv4/IPv6 forwarding
+#
+# Usage: Paste this into the "Cloud-init" section when creating an Oracle instance.
+#        Or run oracle/vps-setup.sh on an existing instance.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - wireguard
+  - wireguard-tools
+  - nftables
+
+write_files:
+  # WireGuard server configuration
+  - path: /etc/wireguard/wg0.conf
+    content: |
+      [Interface]
+      PrivateKey = __REPLACE_WITH_SERVER_PRIVATE_KEY__
+      Address = 10.0.0.1/24
+      ListenPort = 51820
+      SaveConfig = false
+
+      # PPSA Appliance (the USB device)
+      [Peer]
+      PublicKey = __REPLACE_WITH_PPSA_PUBLIC_KEY__
+      AllowedIPs = 10.0.0.2/32
+      PersistentKeepalive = 25
+
+    permissions: '0600'
+
+  # nftables rules: NAT + port forwarding
+  - path: /etc/nftables.conf
+    content: |
+      # PPSA - Oracle VPS nftables rules
+      table ip nat {
+        chain prerouting {
+          type nat hook prerouting priority dstnat; policy accept;
+          # Forward Palworld ports to the PPSA appliance
+          tcp dport { 8211, 8212, 27015, 25575 } dnat to 10.0.0.2
+          udp dport { 8211, 8212, 27015 } dnat to 10.0.0.2
+        }
+        chain postrouting {
+          type nat hook postrouting priority srcnat; policy accept;
+          oifname "eth0" masquerade
+        }
+      }
+      table ip filter {
+        chain input {
+          type filter hook input priority filter; policy drop;
+          ct state established,related accept
+          ct state invalid drop
+          iifname "lo" accept
+          # SSH
+          tcp dport 22 accept
+          # WireGuard
+          udp dport 51820 accept
+        }
+        chain forward {
+          type filter hook forward priority filter; policy drop;
+          ct state established,related accept
+          iifname "wg0" accept
+        }
+      }
+    permissions: '0644'
+
+runcmd:
+  # Enable IP forwarding
+  - echo "net.ipv4.ip_forward=1" >> /etc/sysctl.d/99-ppsa.conf
+  - echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.d/99-ppsa.conf
+  - sysctl -p /etc/sysctl.d/99-ppsa.conf
+
+  # Enable and start services
+  - systemctl enable nftables
+  - systemctl restart nftables
+  - systemctl enable wg-quick@wg0
+  - wg-quick up wg0
+
+  # Replace placeholder private key with generated key
+  - |
+    PRIV=$(wg genkey)
+    PUB=$(echo "$PRIV" | wg pubkey)
+    sed -i "s|__REPLACE_WITH_SERVER_PRIVATE_KEY__|$PRIV|" /etc/wireguard/wg0.conf
+    echo "Server public key: $PUB"
+    echo "Add this public key to the PPSA web UI WireGuard tab."
+
+output:
+  all: '| tee -a /var/log/cloud-init-ppsa.log'

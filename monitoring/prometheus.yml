@@ -1,0 +1,16 @@
+# PPSA - Prometheus Configuration
+# Used with the optional monitoring stack (docker-compose.monitoring.yml)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'ppsa-webui'
+    static_configs:
+      - targets: ['webui:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']

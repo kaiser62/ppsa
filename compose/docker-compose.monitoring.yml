@@ -1,0 +1,106 @@
+# =============================================================================
+# PPSA - Optional Monitoring Stack (Phase 6)
+# =============================================================================
+# Deploy with: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+# Access Grafana at http://<ip>:3000 (admin / admin)
+# Access Prometheus at http://<ip>:9090
+
+volumes:
+  prometheus_data:
+    labels:
+      - "ppsa.volume=prometheus"
+      - "docker-volume-backup.stop-during-backup=true"
+  grafana_data:
+    labels:
+      - "ppsa.volume=grafana"
+      - "docker-volume-backup.stop-during-backup=true"
+
+services:
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: ppsa-node-exporter
+    restart: unless-stopped
+    pid: host
+    network_mode: host
+    command:
+      - "--path.rootfs=/host"
+    volumes:
+      - /:/host:ro,rslave
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "ppsa.component=monitoring"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ppsa-prometheus
+    restart: unless-stopped
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=14d"
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "ppsa.component=monitoring"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ppsa-grafana
+    restart: unless-stopped
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../monitoring/grafana-datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "ppsa.component=monitoring"
