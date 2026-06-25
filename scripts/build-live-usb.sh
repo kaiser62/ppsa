@@ -137,7 +137,8 @@ apt-get update -qq
 # Kernel + boot
 apt-get install -y -qq linux-image-amd64 linux-headers-amd64 firmware-linux firmware-linux-nonfree
 # GRUB (UEFI + BIOS) needed for grub-install when building disk image
-apt-get install -y -qq grub-pc grub-efi-amd64
+# Use -bin packages to avoid Conflicts between grub-pc and grub-efi-amd64
+apt-get install -y -qq grub-pc-bin grub-efi-amd64-bin grub2-common
 
 # Docker
 apt-get install -y -qq docker.io docker-compose-v2 containerd
