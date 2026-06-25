@@ -26,7 +26,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  usb:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -72,8 +72,12 @@ jobs:
             ## PPSA ${{ github.ref_name || inputs.version }}
 
             ### Download
-            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.xz` — compressed disk image
+            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.xz` — compressed disk image (8GB, for USB SSD)
             - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.xz.sha256` — SHA-256 checksum
+
+            ### VirtualBox (VDI)
+            - `ppsa-vbox-${{ github.ref_name || inputs.version }}.vdi.xz` — VirtualBox disk image (4GB, for testing)
+            - `ppsa-vbox-${{ github.ref_name || inputs.version }}.vdi.xz.sha256` — SHA-256 checksum
 
             ### Usage
             1. Download the `.img.xz` file
@@ -88,3 +92,52 @@ jobs:
             - USB SSD, 32GB minimum (64GB+ recommended)
             - UEFI or BIOS boot (both supported)
             - At least 2GB RAM (4GB+ recommended for Palworld)
+
+  virtualbox:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools (including qemu for VDI conversion)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            debootstrap parted e2fsprogs dosfstools \
+            grub-pc-bin grub-efi-amd64-bin rsync cpio \
+            xz-utils util-linux qemu-utils
+
+      - name: Build 4GB test image
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          sudo bash scripts/build-live-usb.sh \
+            --output "ppsa-vbox-${VER}.img" --size 4096
+
+      - name: Convert to VDI
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          sudo qemu-img convert -f raw -O vdi "ppsa-vbox-${VER}.img" "ppsa-vbox-${VER}.vdi"
+          rm -f "ppsa-vbox-${VER}.img"
+
+      - name: Compress VDI
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          sudo xz -9 -T0 "ppsa-vbox-${VER}.vdi"
+
+      - name: Generate checksum
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          F="ppsa-vbox-${VER}.vdi.xz"
+          sha256sum "$F" > "${F}.sha256"
+
+      - name: Upload to Release
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ppsa-vbox-*
+          tag_name: ${{ github.ref_name || inputs.version }}
+          name: PPSA ${{ github.ref_name || inputs.version }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          prerelease: ${{ contains(github.ref_name || inputs.version, '-') }}
