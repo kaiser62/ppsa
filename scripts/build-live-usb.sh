@@ -399,14 +399,14 @@ verbose=no
     comment=PPSA Debian GNU/Linux
     protocol=linux
     kernel_path=uuid(${ROOT_UUID}):/boot/vmlinuz
-    initrd_path=uuid(${ROOT_UUID}):/boot/initrd.img
+    module_path=uuid(${ROOT_UUID}):/boot/initrd.img
     cmdline=root=UUID=${ROOT_UUID} ro quiet mitigations=off
 
 /PPSA Linux (recovery)
     comment=PPSA Debian GNU/Linux (single-user)
     protocol=linux
     kernel_path=uuid(${ROOT_UUID}):/boot/vmlinuz
-    initrd_path=uuid(${ROOT_UUID}):/boot/initrd.img
+    module_path=uuid(${ROOT_UUID}):/boot/initrd.img
     cmdline=root=UUID=${ROOT_UUID} ro single
 LIMINEEOF
     # Strip CRs in case the build script was checked out with CRLF on Windows.
