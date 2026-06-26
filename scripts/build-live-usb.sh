@@ -176,9 +176,10 @@ apt-get install -y -qq linux-image-amd64 firmware-linux
 # the binary release. Provides BOOTX64.EFI ready to drop on the ESP.
 LIMINE_VERSION="12.3.3"
 mkdir -p /opt/limine
-curl -fsSL "https://github.com/limine-bootloader/limine/releases/download/v${LIMINE_VERSION}/limine-binary.tar.xz" \
-    -o /tmp/limine.tar.xz
-tar -xJf /tmp/limine.tar.xz -C /opt/limine --strip-components=1
+# .tar.gz instead of .tar.xz — xz isn't always in the chroot's PATH.
+curl -fsSL "https://github.com/limine-bootloader/limine/releases/download/v${LIMINE_VERSION}/limine-binary.tar.gz" \
+    -o /tmp/limine.tar.gz
+tar -xzf /tmp/limine.tar.gz -C /opt/limine --strip-components=1
 chmod +x /opt/limine/BOOTX64.EFI
 # Save BOOTX64.EFI for later copy onto ESP
 cp /opt/limine/BOOTX64.EFI /tmp/limine-bootx64.efi
