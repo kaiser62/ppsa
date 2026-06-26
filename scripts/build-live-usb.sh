@@ -172,17 +172,8 @@ apt-get install -y -qq linux-image-amd64 firmware-linux
 # Skip linux-headers: server doesn't compile kernel modules.
 # Skip firmware-linux-nonfree: no proprietary WiFi needed on a server.
 
-# Limine bootloader (replaces GRUB). No Debian package yet — download
-# the binary release. Provides BOOTX64.EFI ready to drop on the ESP.
-LIMINE_VERSION="12.3.3"
-mkdir -p /opt/limine
-# .tar.gz instead of .tar.xz — xz isn't always in the chroot's PATH.
-curl -fsSL "https://github.com/limine-bootloader/limine/releases/download/v${LIMINE_VERSION}/limine-binary.tar.gz" \
-    -o /tmp/limine.tar.gz
-tar -xzf /tmp/limine.tar.gz -C /opt/limine --strip-components=1
-chmod +x /opt/limine/BOOTX64.EFI
-# Save BOOTX64.EFI for later copy onto ESP
-cp /opt/limine/BOOTX64.EFI /tmp/limine-bootx64.efi
+# GRUB bootloader (replaces Limine). Install both BIOS and UEFI targets.
+apt-get install -y -qq grub-pc grub-efi-amd64
 
 # Docker (compose plugin is a separate binary, not yet packaged in Trixie)
 apt-get install -y -qq docker.io containerd
@@ -368,72 +359,58 @@ mount "$EFI_PART" "$MOUNT_DIR/boot/efi"
 echo "Copying root filesystem (this takes a while)..."
 rsync -aHAX "$ROOTFS_DIR/" "$MOUNT_DIR/"
 
-# Install Limine bootloader (replaces GRUB)
-# Simpler than GRUB: no chroot dance, no .prefix ELF hacks, no Shim chain.
-# Limine's BOOTX64.EFI on the ESP auto-finds limine.conf and boots the
-# kernel referenced by UUID.
-echo "Installing Limine bootloader..."
+# Install GRUB bootloader (both UEFI and BIOS)
+echo "Installing GRUB bootloader..."
 
-# Copy Limine EFI binary to the standard UEFI fallback path on the ESP.
-# UEFI firmware looks for this exact path when no NVRAM entry is registered.
-# The file was downloaded inside the chroot to /tmp/limine-bootx64.efi
-# and survived the rsync into the target's /tmp.
-mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
-cp "$MOUNT_DIR/tmp/limine-bootx64.efi" "$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI"
-echo "Limine BOOTX64.EFI installed at ESP:/EFI/BOOT/BOOTX64.EFI"
+# Mount kernel filesystems for grub-install to work (it probes devices)
+mount --bind /dev "$MOUNT_DIR/dev"
+mount --bind /proc "$MOUNT_DIR/proc"
+mount --bind /sys "$MOUNT_DIR/sys"
 
-# Write limine.conf to the ESP. Limine searches for limine.conf in:
-#   - the EFI binary's directory
-#   - /EFI/ on the ESP
-#   - /boot/ on the ESP
-#   - the root of the boot device
-# The kernel and initrd are on the ROOT partition (label PPSA_ROOT),
-# so we reference them by UUID rather than by relative path.
+# UEFI: install to the ESP
+grub-install --target=x86_64-efi \
+    --efi-directory="$MOUNT_DIR/boot/efi" \
+    --boot-directory="$MOUNT_DIR/boot" \
+    --recheck \
+    --no-nvram 2>&1
+echo "GRUB (UEFI) installed."
+
+# BIOS: install to the loop device's boot sector
+grub-install --target=i386-pc \
+    --boot-directory="$MOUNT_DIR/boot" \
+    "$LOOP_DEV" \
+    --recheck 2>&1
+echo "GRUB (BIOS) installed."
+
+# Write /boot/grub/grub.cfg
 if [ -n "$ROOT_UUID" ]; then
-    LIMINE_CONF="/tmp/limine.conf"
-    cat > "$LIMINE_CONF" <<LIMINEEOF
-timeout=3
-default_entry=1
-verbose=no
+    mkdir -p "$MOUNT_DIR/boot/grub"
+    cat > "$MOUNT_DIR/boot/grub/grub.cfg" <<GRUBEOF
+set default=0
+set timeout=3
 
-/PPSA Linux
-    comment=PPSA Debian GNU/Linux
-    protocol=linux
-    kernel_path=uuid(${ROOT_UUID}):/boot/vmlinuz
-    module_path=uuid(${ROOT_UUID}):/boot/initrd.img
-    cmdline=root=UUID=${ROOT_UUID} ro quiet mitigations=off
+menuentry "PPSA Linux" {
+    search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+    linux /boot/vmlinuz root=UUID=${ROOT_UUID} ro quiet mitigations=off
+    initrd /boot/initrd.img
+}
 
-/PPSA Linux (recovery)
-    comment=PPSA Debian GNU/Linux (single-user)
-    protocol=linux
-    kernel_path=uuid(${ROOT_UUID}):/boot/vmlinuz
-    module_path=uuid(${ROOT_UUID}):/boot/initrd.img
-    cmdline=root=UUID=${ROOT_UUID} ro single
-LIMINEEOF
-    # Strip CRs in case the build script was checked out with CRLF on Windows.
-    sed -i 's/\r$//' "$LIMINE_CONF" 2>/dev/null || true
-
-    # Place limine.conf in BOTH the ESP root AND the same directory as
-    # BOOTX64.EFI. The same-dir location is the first place Limine looks
-    # per its config-file search order; ESP root is the second-priority
-    # fallback. Belt and suspenders against FAT32 LFN quirks.
-    mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
-    cp "$LIMINE_CONF" "$MOUNT_DIR/boot/efi/limine.conf"
-    cp "$LIMINE_CONF" "$MOUNT_DIR/boot/efi/EFI/BOOT/limine.conf"
-    echo "limine.conf written to ESP:/limine.conf and ESP:/EFI/BOOT/limine.conf (UUID=$ROOT_UUID)."
-    # Debug: dump written content for the build log
-    echo "--- limine.conf (first 20 lines) ---"
-    head -20 "$MOUNT_DIR/boot/efi/EFI/BOOT/limine.conf" || true
-    echo "---"
+menuentry "PPSA Linux (recovery)" {
+    search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+    linux /boot/vmlinuz root=UUID=${ROOT_UUID} ro single
+    initrd /boot/initrd.img
+}
+GRUBEOF
+    sed -i 's/\r$//' "$MOUNT_DIR/boot/grub/grub.cfg" 2>/dev/null || true
+    echo "grub.cfg written (UUID=$ROOT_UUID)."
 else
-    echo "WARNING: ROOT_UUID not detected; limine.conf not written."
+    echo "WARNING: ROOT_UUID not detected; grub.cfg not written."
 fi
 
-# Also copy limine-bios.sys to /boot for future BIOS boot support
-# (currently BIOS install isn't done — only UEFI works out of the box)
-if [ -f "$MOUNT_DIR/opt/limine/limine-bios.sys" ]; then
-    cp "$MOUNT_DIR/opt/limine/limine-bios.sys" "$MOUNT_DIR/boot/limine-bios.sys"
-fi
+# Clean up chroot mounts
+umount "$MOUNT_DIR/dev" 2>/dev/null || true
+umount "$MOUNT_DIR/proc" 2>/dev/null || true
+umount "$MOUNT_DIR/sys" 2>/dev/null || true
 
 # Clean up mounts
 umount "$MOUNT_DIR/dev/pts" 2>/dev/null || true
