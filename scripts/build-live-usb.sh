@@ -390,7 +390,8 @@ echo "Limine BOOTX64.EFI installed at ESP:/EFI/BOOT/BOOTX64.EFI"
 # The kernel and initrd are on the ROOT partition (label PPSA_ROOT),
 # so we reference them by UUID rather than by relative path.
 if [ -n "$ROOT_UUID" ]; then
-    cat > "$MOUNT_DIR/boot/efi/limine.conf" <<LIMINEEOF
+    LIMINE_CONF="/tmp/limine.conf"
+    cat > "$LIMINE_CONF" <<LIMINEEOF
 timeout=3
 default_entry=1
 verbose=no
@@ -410,9 +411,20 @@ verbose=no
     cmdline=root=UUID=${ROOT_UUID} ro single
 LIMINEEOF
     # Strip CRs in case the build script was checked out with CRLF on Windows.
-    # Limine's parser treats \r as part of the token, breaking the protocol line.
-    sed -i 's/\r$//' "$MOUNT_DIR/boot/efi/limine.conf" 2>/dev/null || true
-    echo "limine.conf written (UUID=$ROOT_UUID)."
+    sed -i 's/\r$//' "$LIMINE_CONF" 2>/dev/null || true
+
+    # Place limine.conf in BOTH the ESP root AND the same directory as
+    # BOOTX64.EFI. The same-dir location is the first place Limine looks
+    # per its config-file search order; ESP root is the second-priority
+    # fallback. Belt and suspenders against FAT32 LFN quirks.
+    mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
+    cp "$LIMINE_CONF" "$MOUNT_DIR/boot/efi/limine.conf"
+    cp "$LIMINE_CONF" "$MOUNT_DIR/boot/efi/EFI/BOOT/limine.conf"
+    echo "limine.conf written to ESP:/limine.conf and ESP:/EFI/BOOT/limine.conf (UUID=$ROOT_UUID)."
+    # Debug: dump written content for the build log
+    echo "--- limine.conf (first 20 lines) ---"
+    head -20 "$MOUNT_DIR/boot/efi/EFI/BOOT/limine.conf" || true
+    echo "---"
 else
     echo "WARNING: ROOT_UUID not detected; limine.conf not written."
 fi
