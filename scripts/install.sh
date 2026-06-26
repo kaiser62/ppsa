@@ -15,8 +15,19 @@ DATA_DIR="$PPSA_DIR/data"
 LOG_FILE="/var/log/ppsa-install.log"
 FLAG_FILE="$PPSA_DIR/.installed"
 
-# Redirect output to log AND terminal
-exec > >(tee -a "$LOG_FILE") 2>&1
+# Send script output to BOTH the log file and the journal/console.
+# Use a FIFO to avoid exec-replacing fd 1, which would starve the journal.
+# ponytail: simple `tee` pipeline, one-time setup
+rm -f "$LOG_FILE"
+mkfifo "$LOG_FILE.pipe" 2>/dev/null || true
+if [ -p "$LOG_FILE.pipe" ]; then
+    tee -a "$LOG_FILE" < "$LOG_FILE.pipe" &
+    exec > "$LOG_FILE.pipe" 2>&1
+    trap 'rm -f "$LOG_FILE.pipe"' EXIT
+else
+    # Fallback: just write to log (journal may be silent in this case)
+    exec > "$LOG_FILE" 2>&1
+fi
 chmod 644 "$LOG_FILE" 2>/dev/null || true
 
 # Only run once
@@ -60,9 +71,34 @@ else
 fi
 
 # --- Step 0b: Register UEFI boot entry (VirtualBox workaround) ---
+# VirtualBox's auto-created Boot0001 does not load \EFI\BOOT\BOOTx64.EFI from ESP,
+# so we register a proper NVRAM entry pointing to our Shim on the ESP.
 if [ -d /sys/firmware/efi/efivars ] && command -v efibootmgr &>/dev/null; then
-    efibootmgr --create --disk /dev/sda --part 1 \
-        --loader '\\EFI\\PPSA\\shimx64.efi' --label 'PPSA' 2>/dev/null || true
+    # Derive the boot disk + ESP partition from the actual root device
+    # (works for /dev/sda2, /dev/vda2, /dev/nvme0n1p2)
+    ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    if [ -n "$ROOT_DEV" ]; then
+        BOOT_DISK=$(lsblk -ndo PKNAME "$ROOT_DEV" 2>/dev/null || true)
+        ESP_PART=$(cat "/sys/class/block/$(basename "$ROOT_DEV")/partition" 2>/dev/null || true)
+        if [ -n "$BOOT_DISK" ] && [ -n "$ESP_PART" ]; then
+            BOOT_DISK="/dev/$BOOT_DISK"
+            # Remove any stale PPSA entry, then create a fresh one
+            efibootmgr --bootnum 1>/dev/null 2>&1 | grep -i ppsa | \
+                awk '{print $1}' | sed 's/Boot//' | sed 's/\*//' | while read -r n; do
+                    [ -n "$n" ] && efibootmgr --bootnum "$n" --delete-bootnum >/dev/null 2>&1 || true
+                done
+            efibootmgr --create \
+                --disk "$BOOT_DISK" --part "$ESP_PART" \
+                --loader '\EFI\PPSA\shimx64.efi' --label 'PPSA' \
+                >/dev/null 2>&1 && \
+                echo "  Registered UEFI boot entry: PPSA -> $BOOT_DISK part $ESP_PART" || \
+                echo "  efibootmgr create failed (non-fatal; UEFI may still boot via ESP fallback)."
+        else
+            echo "  Skipping UEFI registration (could not derive boot disk/ESP from $ROOT_DEV)."
+        fi
+    fi
+else
+    echo "  Skipping UEFI registration (no efivars or no efibootmgr)."
 fi
 
 # --- Step 1: Ensure Docker is running ---
