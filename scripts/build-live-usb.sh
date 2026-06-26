@@ -56,7 +56,7 @@ fi
 
 # --- Check/install dependencies ---
 echo -e "${GREEN}[1/7] Checking dependencies...${NC}"
-DEPS="debootstrap parted e2fsprogs dosfstools"
+DEPS="debootstrap parted e2fsprogs dosfstools grub-pc-bin grub-efi-amd64-bin grub2-common"
 MISSING=""
 for dep in $DEPS; do
     if ! dpkg -s "$dep" &>/dev/null; then
@@ -172,8 +172,8 @@ apt-get install -y -qq linux-image-amd64 firmware-linux
 # Skip linux-headers: server doesn't compile kernel modules.
 # Skip firmware-linux-nonfree: no proprietary WiFi needed on a server.
 
-# GRUB bootloader (replaces Limine). Install platform-bin packages (no conflict).
-apt-get install -y -qq grub2-common grub-pc-bin grub-efi-amd64-bin
+# GRUB bootloader - install tools in image for maintenance
+apt-get install -y -qq grub2-common
 
 # Docker (compose plugin is a separate binary, not yet packaged in Trixie)
 apt-get install -y -qq docker.io containerd
