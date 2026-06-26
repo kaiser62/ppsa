@@ -161,8 +161,13 @@ apt-get install -y -qq linux-image-amd64 linux-headers-amd64 firmware-linux firm
 # Use -bin packages to avoid Conflicts between grub-pc and grub-efi-amd64
 apt-get install -y -qq grub-pc-bin grub-efi-amd64-bin grub2-common
 
-# Docker (compose plugin is a separate package in Trixie)
-apt-get install -y -qq docker.io containerd docker-compose-v2
+# Docker (compose plugin is a separate binary, not yet packaged in Trixie)
+apt-get install -y -qq docker.io containerd
+# Install docker compose plugin from GitHub
+mkdir -p /usr/lib/docker/cli-plugins
+curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+    -o /usr/lib/docker/cli-plugins/docker-compose
+chmod +x /usr/lib/docker/cli-plugins/docker-compose
 
 # Networking + VPN
 apt-get install -y -qq wireguard wireguard-tools openresolv
