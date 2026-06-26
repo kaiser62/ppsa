@@ -409,6 +409,9 @@ verbose=no
     initrd_path=uuid(${ROOT_UUID}):/boot/initrd.img
     cmdline=root=UUID=${ROOT_UUID} ro single
 LIMINEEOF
+    # Strip CRs in case the build script was checked out with CRLF on Windows.
+    # Limine's parser treats \r as part of the token, breaking the protocol line.
+    sed -i 's/\r$//' "$MOUNT_DIR/boot/efi/limine.conf" 2>/dev/null || true
     echo "limine.conf written (UUID=$ROOT_UUID)."
 else
     echo "WARNING: ROOT_UUID not detected; limine.conf not written."
