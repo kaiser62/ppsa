@@ -172,8 +172,8 @@ apt-get install -y -qq linux-image-amd64 firmware-linux
 # Skip linux-headers: server doesn't compile kernel modules.
 # Skip firmware-linux-nonfree: no proprietary WiFi needed on a server.
 
-# GRUB bootloader (replaces Limine). Install both BIOS and UEFI targets.
-apt-get install -y -qq grub-pc grub-efi-amd64
+# GRUB bootloader (replaces Limine). Install platform-bin packages (no conflict).
+apt-get install -y -qq grub2-common grub-pc-bin grub-efi-amd64-bin
 
 # Docker (compose plugin is a separate binary, not yet packaged in Trixie)
 apt-get install -y -qq docker.io containerd
