@@ -58,10 +58,12 @@ jobs:
           sudo bash scripts/build-live-usb.sh \
             --output "ppsa-usb-${VER}.img"
 
-      - name: Compress (zstd -3, ~10s vs 90s for xz)
+      - name: Compress (zstd -10, under 2GB GitHub asset limit)
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          zstd -3 -T0 --no-progress "ppsa-usb-${VER}.img" -o "ppsa-usb-${VER}.img.zst"
+          zstd -10 -T0 --no-progress "ppsa-usb-${VER}.img" -o "ppsa-usb-${VER}.img.zst"
+          # Delete raw 8GB to avoid GitHub asset upload (2GB limit)
+          rm -f "ppsa-usb-${VER}.img"
 
       - name: Generate checksum
         run: |
@@ -133,10 +135,10 @@ jobs:
           qemu-img convert -f raw -O vdi "ppsa-vbox-${VER}.img" "ppsa-vbox-${VER}.vdi"
           rm -f "ppsa-vbox-${VER}.img"
 
-      - name: Compress VDI (zstd)
+      - name: Compress VDI (zstd -10)
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          zstd -3 -T0 --no-progress "ppsa-vbox-${VER}.vdi" -o "ppsa-vbox-${VER}.vdi.zst"
+          zstd -10 -T0 --no-progress "ppsa-vbox-${VER}.vdi" -o "ppsa-vbox-${VER}.vdi.zst"
 
       - name: Generate checksum
         run: |
