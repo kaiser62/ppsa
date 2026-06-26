@@ -1,0 +1,30 @@
+{
+  "output": {
+    "directory": "H:\\dev\\palimage",
+    "artifact_size_mb": 8192,
+    "compression_level": 10
+  },
+  "wsl": {
+    "user": "artho",
+    "project_path": "/mnt/d/Dev/palworld-self-containing-server"
+  },
+  "github": {
+    "repository": "kaiser62/ppsa",
+    "issue_number": 1,
+    "poll_interval_seconds": 10
+  },
+  "virtualbox": {
+    "vm_name": "ppsa-test",
+    "memory_mb": 2048,
+    "cpus": 2
+  },
+  "logging": {
+    "retention_days": 30,
+    "directory": "H:\\dev\\palimage\\logs",
+    "levels": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "SUCCESS"]
+  },
+  "build": {
+    "retry_count": 3,
+    "wsl_home_build_dir": "/home/artho/build"
+  }
+}
