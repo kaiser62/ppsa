@@ -94,14 +94,29 @@ fi
 # VirtualBox's auto-created Boot0001 does not load \EFI\BOOT\BOOTx64.EFI from ESP,
 # so we register a proper NVRAM entry pointing to our Shim on the ESP.
 if [ -d /sys/firmware/efi/efivars ] && command -v efibootmgr &>/dev/null; then
-    # Derive the boot disk + ESP partition from the actual root device
-    # (works for /dev/sda2, /dev/vda2, /dev/nvme0n1p2)
-    ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null || true)
-    if [ -n "$ROOT_DEV" ]; then
+    # IMPORTANT: derive BOOT_DISK and ESP_PART from the ESP (/boot/efi),
+    # NOT from the root device. The ESP is partition 1, root is partition 2.
+    # Using root's partition number for ESP would point efibootmgr at the wrong
+    # partition and the NVRAM entry would be invalid.
+    ESP_DEV=$(findmnt -n -o SOURCE /boot/efi 2>/dev/null || true)
+    if [ -z "$ESP_DEV" ]; then
+        # Fallback: walk partitions to find the one flagged as ESP
+        ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null || true)
         BOOT_DISK=$(lsblk -ndo PKNAME "$ROOT_DEV" 2>/dev/null || true)
-        ESP_PART=$(cat "/sys/class/block/$(basename "$ROOT_DEV")/partition" 2>/dev/null || true)
-        if [ -n "$BOOT_DISK" ] && [ -n "$ESP_PART" ]; then
+        if [ -n "$BOOT_DISK" ]; then
             BOOT_DISK="/dev/$BOOT_DISK"
+            for n in $(seq 1 8); do
+                if sfdisk -l "$BOOT_DISK" 2>/dev/null | grep -q "${BOOT_DISK}${n}.*EFI"; then
+                    ESP_DEV="${BOOT_DISK}${n}"
+                    break
+                fi
+            done
+        fi
+    fi
+    if [ -n "$ESP_DEV" ]; then
+        BOOT_DISK="/dev/$(lsblk -ndo PKNAME "$ESP_DEV" 2>/dev/null || true)"
+        ESP_PART=$(cat "/sys/class/block/$(basename "$ESP_DEV")/partition" 2>/dev/null || true)
+        if [ -n "$BOOT_DISK" ] && [ -n "$ESP_PART" ]; then
             # Remove any stale PPSA entry, then create a fresh one
             efibootmgr 2>/dev/null | grep -i ppsa | \
                 awk '{print $1}' | sed 's/Boot//;s/\*//' | while read -r n; do
@@ -114,8 +129,10 @@ if [ -d /sys/firmware/efi/efivars ] && command -v efibootmgr &>/dev/null; then
                 echo "  Registered UEFI boot entry: PPSA -> $BOOT_DISK part $ESP_PART" || \
                 echo "  efibootmgr create failed (non-fatal; UEFI may still boot via ESP fallback)."
         else
-            echo "  Skipping UEFI registration (could not derive boot disk/ESP from $ROOT_DEV)."
+            echo "  Skipping UEFI registration (could not derive boot disk/ESP from $ESP_DEV)."
         fi
+    else
+        echo "  Skipping UEFI registration (no ESP found)."
     fi
 else
     echo "  Skipping UEFI registration (no efivars or no efibootmgr)."
