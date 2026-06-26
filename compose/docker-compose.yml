@@ -58,8 +58,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4"
-          memory: 8G
+          cpus: "2.0"   # 2-CPU VMs need ≤2; bigger hosts also fine
+          memory: 4G    # 4GB cap works on 4GB+ hosts; adjust per-machine
     logging:
       driver: "json-file"
       options:
