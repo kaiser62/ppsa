@@ -22,7 +22,18 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+# Ponytail: replaced passlib with direct bcrypt to avoid passlib 1.7.4's internal
+# self-test (sends 73-byte test password) breaking on bcrypt>=4.0.
+import bcrypt as _bcrypt
+
+def _hash_pw(plain: str) -> str:
+    return _bcrypt.hashpw(plain.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+
+def _verify_pw(plain: str, hashed: str) -> bool:
+    try:
+        return _bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 # --- Configuration ---
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
@@ -36,7 +47,6 @@ BACKUP_DIR = Path("/backups")  # mounted from ../backups by compose
 
 # --- Bootstrap ---
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security_basic = HTTPBasic(auto_error=False)
 security_bearer = HTTPBearer(auto_error=False)
 
@@ -48,7 +58,7 @@ async def lifespan(app: FastAPI):
     users_file = DATA_DIR / "users.json"
     if not users_file.exists():
         users_file.write_text(json.dumps({
-            "admin": pwd_context.hash("admin")
+            "admin": _hash_pw("admin")
         }))
     # Auto-start WireGuard tunnel if config exists
     if WG_CONF.exists():
@@ -113,7 +123,7 @@ async def metrics():
 # Auth helpers
 # ---------------------------------------------------------------------------
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return _verify_pw(plain, hashed)
 
 def create_token(username: str) -> str:
     exp = datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
@@ -225,7 +235,7 @@ async def change_password(data: dict, _user: str = Depends(require_auth)):
     if not hashed or not verify_password(current, hashed):
         raise HTTPException(status_code=403, detail="Current password is incorrect")
 
-    users["admin"] = pwd_context.hash(new_pw)
+    users["admin"] = _hash_pw(new_pw)
     users_file.write_text(json.dumps(users))
     return {"status": "ok"}
 
