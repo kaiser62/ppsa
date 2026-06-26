@@ -131,6 +131,18 @@ locale-gen
 echo "LANG=en_US.UTF-8" > /etc/default/locale
 echo "LC_ALL=en_US.UTF-8" >> /etc/default/locale
 
+# --- DNS: write a static resolv.conf pointing to public resolvers ---
+# Avoids the systemd-resolved 127.0.0.53#53 connection-refused trap.
+# On a server appliance, public DNS is more reliable than depending on
+# systemd-resolved (which may not be enabled in minimal images) or
+# DHCP-supplied DNS (which is empty until network comes up).
+cat > /etc/resolv.conf <<'DNSEOF'
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+nameserver 9.9.9.9
+options edns0 trust-ad
+DNSEOF
+
 # --- Hostname ---
 echo "ppsa" > /etc/hostname
 cat > /etc/hosts <<HOSTSEOF
