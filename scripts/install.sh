@@ -41,34 +41,42 @@ echo "Date: $(date)"
 echo "Repo: $PPSA_DIR"
 
 # --- Step 0: Auto-resize root partition to fill USB drive ---
+# Bounded with timeouts: growpart/parted can hang on VDI/loop devices where
+# there's no spare space to grow into. Total budget: 30s.
 echo "[0/6] Resizing root partition to fill USB drive..."
-ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null || echo "")
-if [ -n "$ROOT_DEV" ]; then
-    # Parse disk and partition number (e.g., /dev/sda2 → /dev/sda, 2)
+RESIZE_START=$(date +%s)
+do_resize() {
+    ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    [ -z "$ROOT_DEV" ] && { echo "  Skipping (no root device)."; return; }
+
+    # Skip on loop/VDI: growpart can't help when the disk is already full.
+    if [ "$(stat -c '%t' "$ROOT_DEV" 2>/dev/null)" = "$(stat -c '%t' /dev/loop0 2>/dev/null)" ]; then
+        echo "  Skipping (loop/VDI device — already at full size)."
+        return
+    fi
+
     DISK=$(echo "$ROOT_DEV" | sed 's/[0-9]*$//')
     PART_NUM="${ROOT_DEV#"$DISK"}"
-    if [ -n "$DISK" ] && [ -n "$PART_NUM" ]; then
-        # Check if resize is needed (partition < 90% of disk size)
-        DISK_SECTORS=$(blockdev --getsz "$DISK" 2>/dev/null || echo 0)
-        PART_END=$(parted "$DISK" unit s print 2>/dev/null | awk -v p="$PART_NUM" '$1 == p {print $3}' | tr -d 's')
-        if [ -n "$PART_END" ] && [ -n "$DISK_SECTORS" ] && [ "$DISK_SECTORS" -gt 0 ] 2>/dev/null; then
-            THRESHOLD=$((DISK_SECTORS * 90 / 100))
-            if [ "${PART_END:-0}" -lt "$THRESHOLD" ] 2>/dev/null; then
-                growpart "$DISK" "$PART_NUM" 2>/dev/null || true
-                resize2fs "$ROOT_DEV" 2>/dev/null || true
-                echo "  Root partition resized."
-            else
-                echo "  Already at full size, skipping."
-            fi
-        else
-            echo "  Skipping resize (non-standard device or disk info unavailable)."
-        fi
+    [ -z "$DISK" ] || [ -z "$PART_NUM" ] && { echo "  Skipping (parse fail: $ROOT_DEV)."; return; }
+
+    # Check if resize is needed (partition < 90% of disk). Each call bounded.
+    DISK_SECTORS=$(timeout 5 blockdev --getsz "$DISK" 2>/dev/null || echo 0)
+    PART_END=$(timeout 5 parted "$DISK" unit s print 2>/dev/null | awk -v p="$PART_NUM" '$1 == p {print $3}' | tr -d 's')
+    [ -z "$DISK_SECTORS" ] || [ "$DISK_SECTORS" = "0" ] && { echo "  Skipping (no disk size info)."; return; }
+    [ -z "$PART_END" ] && { echo "  Skipping (no partition info)."; return; }
+
+    THRESHOLD=$((DISK_SECTORS * 90 / 100))
+    if [ "${PART_END:-0}" -lt "$THRESHOLD" ] 2>/dev/null; then
+        timeout 10 growpart "$DISK" "$PART_NUM" 2>/dev/null || true
+        timeout 30 resize2fs "$ROOT_DEV" 2>/dev/null || true
+        echo "  Root partition resized."
     else
-        echo "  Skipping resize (could not parse root device: $ROOT_DEV)."
+        echo "  Already at full size, skipping."
     fi
-else
-    echo "  Skipping resize (no root device found)."
-fi
+}
+do_resize
+ELAPSED=$(( $(date +%s) - RESIZE_START ))
+echo "  (resize step took ${ELAPSED}s)"
 
 # --- Step 0b: Register UEFI boot entry (VirtualBox workaround) ---
 # VirtualBox's auto-created Boot0001 does not load \EFI\BOOT\BOOTx64.EFI from ESP,
@@ -83,8 +91,8 @@ if [ -d /sys/firmware/efi/efivars ] && command -v efibootmgr &>/dev/null; then
         if [ -n "$BOOT_DISK" ] && [ -n "$ESP_PART" ]; then
             BOOT_DISK="/dev/$BOOT_DISK"
             # Remove any stale PPSA entry, then create a fresh one
-            efibootmgr --bootnum 1>/dev/null 2>&1 | grep -i ppsa | \
-                awk '{print $1}' | sed 's/Boot//' | sed 's/\*//' | while read -r n; do
+            efibootmgr 2>/dev/null | grep -i ppsa | \
+                awk '{print $1}' | sed 's/Boot//;s/\*//' | while read -r n; do
                     [ -n "$n" ] && efibootmgr --bootnum "$n" --delete-bootnum >/dev/null 2>&1 || true
                 done
             efibootmgr --create \
