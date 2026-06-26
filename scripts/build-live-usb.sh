@@ -264,6 +264,9 @@ cat > /etc/motd <<MOTDEOF
 ║     PPSA - Palworld Server Appliance             ║
 ║     The server is starting up...                 ║
 ║     Web UI:  http://(this-ip):8080               ║
+║     If the web UI is unavailable, check:         ║
+║       journalctl -u ppsa-install                 ║
+║       cat /var/log/ppsa-install.log              ║
 ╚══════════════════════════════════════════════════╝
 MOTDEOF
 

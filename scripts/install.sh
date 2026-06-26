@@ -17,6 +17,7 @@ FLAG_FILE="$PPSA_DIR/.installed"
 
 # Redirect output to log AND terminal
 exec > >(tee -a "$LOG_FILE") 2>&1
+chmod 644 "$LOG_FILE" 2>/dev/null || true
 
 # Only run once
 if [ -f "$FLAG_FILE" ] && [ "${1:-}" != "--force" ]; then
@@ -56,6 +57,12 @@ if [ -n "$ROOT_DEV" ]; then
     fi
 else
     echo "  Skipping resize (no root device found)."
+fi
+
+# --- Step 0b: Register UEFI boot entry (VirtualBox workaround) ---
+if [ -d /sys/firmware/efi/efivars ] && command -v efibootmgr &>/dev/null; then
+    efibootmgr --create --disk /dev/sda --part 1 \
+        --loader '\\EFI\\PPSA\\shimx64.efi' --label 'PPSA' 2>/dev/null || true
 fi
 
 # --- Step 1: Ensure Docker is running ---
