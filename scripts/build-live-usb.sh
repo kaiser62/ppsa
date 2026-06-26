@@ -296,6 +296,10 @@ echo -e "${GREEN}[4/7] Copying PPSA files...${NC}"
 mkdir -p "$ROOTFS_DIR/opt/ppsa"
 cp -a "$PPSA_SRC/." "$ROOTFS_DIR/opt/ppsa/"
 rm -rf "$ROOTFS_DIR/opt/ppsa/build" "$ROOTFS_DIR/opt/ppsa/.git" "$ROOTFS_DIR/opt/ppsa/preseed"
+# Fix execute bits (Windows git doesn't track +x)
+chmod +x "$ROOTFS_DIR/opt/ppsa/scripts/"*.sh 2>/dev/null || true
+chmod +x "$ROOTFS_DIR/opt/ppsa/oracle/"*.sh 2>/dev/null || true
+find "$ROOTFS_DIR/opt/ppsa" -type f -name "*.sh" -exec chmod +x {} \;
 
 # Create symlinks for PATH
 mkdir -p "$ROOTFS_DIR/usr/local/bin"
