@@ -396,14 +396,14 @@ set timeout=3
 
 menuentry "PPSA Linux" {
     search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
-    linux /boot/vmlinuz root=UUID=${ROOT_UUID} ro quiet mitigations=off
-    initrd /boot/initrd.img
+    linux /vmlinuz root=UUID=${ROOT_UUID} ro quiet mitigations=off
+    initrd /initrd.img
 }
 
 menuentry "PPSA Linux (recovery)" {
     search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
-    linux /boot/vmlinuz root=UUID=${ROOT_UUID} ro single
-    initrd /boot/initrd.img
+    linux /vmlinuz root=UUID=${ROOT_UUID} ro single
+    initrd /initrd.img
 }
 GRUBEOF
     sed -i 's/\r$//' "$MOUNT_DIR/boot/grub/grub.cfg" 2>/dev/null || true
