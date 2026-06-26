@@ -8,7 +8,11 @@
 # After this runs, the web UI is available at http://<ip>:8080
 # =============================================================================
 
-set -euo pipefail
+set -eu
+# Note: deliberately no pipefail. The script uses several pipelines
+# (cmd | grep ... | awk ... | head -1) where grep returning 1 on no
+# match is a normal case. With pipefail, those would abort the script
+# under set -e. Last-command-in-pipeline failures are still caught.
 
 PPSA_DIR="/opt/ppsa"
 DATA_DIR="$PPSA_DIR/data"
@@ -93,11 +97,22 @@ fi
 # --- Step 0b: Register UEFI boot entry (VirtualBox workaround) ---
 # VirtualBox's auto-created Boot0001 does not load \EFI\BOOT\BOOTx64.EFI from ESP,
 # so we register a proper NVRAM entry pointing to our Shim on the ESP.
-if [ -d /sys/firmware/efi/efivars ] && command -v efibootmgr &>/dev/null; then
-    # IMPORTANT: derive BOOT_DISK and ESP_PART from the ESP (/boot/efi),
-    # NOT from the root device. The ESP is partition 1, root is partition 2.
-    # Using root's partition number for ESP would point efibootmgr at the wrong
-    # partition and the NVRAM entry would be invalid.
+# Wrapped in a subshell with set -e/pipefail disabled: efibootmgr's pipeline
+# (efibootmgr | grep | awk) returns non-zero when grep finds no PPSA entries
+# (a totally normal case on first boot), and pipefail would otherwise kill
+# the script mid-install.
+(
+    set +e
+    set +o pipefail
+
+    if [ ! -d /sys/firmware/efi/efivars ] || ! command -v efibootmgr &>/dev/null; then
+        echo "  Skipping UEFI registration (no efivars or no efibootmgr)."
+        exit 0
+    fi
+
+    # Derive BOOT_DISK and ESP_PART from the ESP (/boot/efi), NOT the root.
+    # ESP is partition 1, root is partition 2 — pointing efibootmgr at the
+    # root partition creates a valid-looking but bogus NVRAM entry.
     ESP_DEV=$(findmnt -n -o SOURCE /boot/efi 2>/dev/null || true)
     if [ -z "$ESP_DEV" ]; then
         # Fallback: walk partitions to find the one flagged as ESP
@@ -113,30 +128,35 @@ if [ -d /sys/firmware/efi/efivars ] && command -v efibootmgr &>/dev/null; then
             done
         fi
     fi
-    if [ -n "$ESP_DEV" ]; then
-        BOOT_DISK="/dev/$(lsblk -ndo PKNAME "$ESP_DEV" 2>/dev/null || true)"
-        ESP_PART=$(cat "/sys/class/block/$(basename "$ESP_DEV")/partition" 2>/dev/null || true)
-        if [ -n "$BOOT_DISK" ] && [ -n "$ESP_PART" ]; then
-            # Remove any stale PPSA entry, then create a fresh one
-            efibootmgr 2>/dev/null | grep -i ppsa | \
-                awk '{print $1}' | sed 's/Boot//;s/\*//' | while read -r n; do
-                    [ -n "$n" ] && efibootmgr --bootnum "$n" --delete-bootnum >/dev/null 2>&1 || true
-                done
-            efibootmgr --create \
-                --disk "$BOOT_DISK" --part "$ESP_PART" \
-                --loader '\EFI\PPSA\shimx64.efi' --label 'PPSA' \
-                >/dev/null 2>&1 && \
-                echo "  Registered UEFI boot entry: PPSA -> $BOOT_DISK part $ESP_PART" || \
-                echo "  efibootmgr create failed (non-fatal; UEFI may still boot via ESP fallback)."
-        else
-            echo "  Skipping UEFI registration (could not derive boot disk/ESP from $ESP_DEV)."
-        fi
-    else
+    if [ -z "$ESP_DEV" ]; then
         echo "  Skipping UEFI registration (no ESP found)."
+        exit 0
     fi
-else
-    echo "  Skipping UEFI registration (no efivars or no efibootmgr)."
-fi
+
+    BOOT_DISK="/dev/$(lsblk -ndo PKNAME "$ESP_DEV" 2>/dev/null || true)"
+    ESP_PART=$(cat "/sys/class/block/$(basename "$ESP_DEV")/partition" 2>/dev/null || true)
+    if [ -z "$BOOT_DISK" ] || [ -z "$ESP_PART" ]; then
+        echo "  Skipping UEFI registration (could not derive disk/ESP from $ESP_DEV)."
+        exit 0
+    fi
+
+    # Remove any stale PPSA entry, then create a fresh one.
+    # || true at the end swallows the pipeline's non-zero exit when grep
+    # finds no PPSA entries (normal on first boot).
+    efibootmgr 2>/dev/null | grep -i ppsa | \
+        awk '{print $1}' | sed 's/Boot//;s/\*//' | while read -r n; do
+            [ -n "$n" ] && efibootmgr --bootnum "$n" --delete-bootnum >/dev/null 2>&1 || true
+        done || true
+
+    if efibootmgr --create \
+        --disk "$BOOT_DISK" --part "$ESP_PART" \
+        --loader '\EFI\PPSA\shimx64.efi' --label 'PPSA' \
+        >/dev/null 2>&1; then
+        echo "  Registered UEFI boot entry: PPSA -> $BOOT_DISK part $ESP_PART"
+    else
+        echo "  efibootmgr create failed (non-fatal; UEFI may still boot via ESP fallback)."
+    fi
+)
 
 # --- Step 1: Ensure Docker is running ---
 echo "[1/6] Starting Docker..."
@@ -154,7 +174,11 @@ fi
 
 # --- Step 3: Deploy Docker stack ---
 echo "[3/6] Deploying Docker stack..."
-docker compose -f compose/docker-compose.yml pull
+# Pull can fail on no-network or registry issues — don't let it kill install.
+docker compose -f compose/docker-compose.yml pull || {
+    echo "WARNING: docker compose pull failed (network or registry issue)."
+    echo "Will try 'up' with whatever images are cached locally."
+}
 docker compose -f compose/docker-compose.yml up -d --build || {
     echo "WARNING: Docker stack failed to start fully."
     echo "Check logs: docker compose -f $PPSA_DIR/compose/docker-compose.yml logs"
@@ -177,8 +201,10 @@ ufw allow 8212/tcp   # Palworld REST API
 echo "[5/6] Marking installation complete..."
 date > "$FLAG_FILE"
 
-# Get IP for summary
-IP=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
+# Get IP for summary (fallback to hostname if no non-loopback address)
+IP=$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1 || true)
+[ -z "$IP" ] && IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+[ -z "$IP" ] && IP="<this-machine>"
 
 echo ""
 echo "=== PPSA Setup Complete ==="
