@@ -161,8 +161,8 @@ apt-get install -y -qq linux-image-amd64 linux-headers-amd64 firmware-linux firm
 # Use -bin packages to avoid Conflicts between grub-pc and grub-efi-amd64
 apt-get install -y -qq grub-pc-bin grub-efi-amd64-bin grub2-common
 
-# Docker (compose v2 included in docker.io in Trixie)
-apt-get install -y -qq docker.io containerd
+# Docker (compose plugin is a separate package in Trixie)
+apt-get install -y -qq docker.io containerd docker-compose-v2
 
 # Networking + VPN
 apt-get install -y -qq wireguard wireguard-tools openresolv
