@@ -189,7 +189,8 @@ echo "artho:arthoroy" | chpasswd
 passwd -d root 2>/dev/null || true  # no root password, use sudo
 
 # --- SSH: allow password auth for first setup, add alt port, disable DNS lookups ---
-sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/^#Port 22/Port 22/' /etc/ssh/sshd_config
+sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 echo "Port 10022" >> /etc/ssh/sshd_config
 echo "UseDNS no" >> /etc/ssh/sshd_config
 echo "ListenAddress 0.0.0.0" >> /etc/ssh/sshd_config
@@ -220,6 +221,8 @@ NETEOF
 cat > /etc/fstab <<FSTABEOF
 # PPSA root filesystem
 LABEL=PPSA_ROOT / ext4 defaults,errors=remount-ro 0 1
+# EFI System Partition
+LABEL=PPSA_BOOT /boot/efi vfat umask=0077 0 2
 FSTABEOF
 
 # --- GRUB config (create default, -bin packages don't ship it) ---
@@ -348,10 +351,16 @@ grub-install --target=i386-pc "$LOOP_DEV" --recheck
 update-grub
 GRUBEOF
 
-# Copy the GRUB EFI binary to the standard fallback path
-if [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" ]; then
+# Copy the GRUB EFI binary to the standard fallback path.
+# BOOTx64.EFI must be Shim (not GRUB directly) so it chain-loads
+# grubx64.efi with the correct device handle — this ensures GRUB
+# resolves its embedded prefix correctly and finds its config.
+if [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/shimx64.efi" ] && \
+   [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" ]; then
     mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
-    cp "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" "$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTx64.EFI"
+    cp "$MOUNT_DIR/boot/efi/EFI/PPSA/shimx64.efi"  "$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTx64.EFI"
+    cp "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi"  "$MOUNT_DIR/boot/efi/EFI/BOOT/grubx64.efi"
+    echo "ESP BOOT fallback: Shim -> grubx64.efi"
 fi
 
 # Place a forwarding grub.cfg on the ESP so GRUB finds a config on first boot.
