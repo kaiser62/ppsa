@@ -60,7 +60,7 @@ jobs:
       - name: Compress image
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          sudo xz -4 -T0 "ppsa-usb-${VER}.img"
+          sudo xz -0 -T0 "ppsa-usb-${VER}.img"
 
       - name: Generate checksum
         run: |
@@ -142,7 +142,7 @@ jobs:
       - name: Compress VDI
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          sudo xz -4 -T0 "ppsa-vbox-${VER}.vdi"
+          sudo xz -0 -T0 "ppsa-vbox-${VER}.vdi"
 
       - name: Generate checksum
         run: |
