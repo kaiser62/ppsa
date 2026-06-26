@@ -41,42 +41,61 @@ echo "Date: $(date)"
 echo "Repo: $PPSA_DIR"
 
 # --- Step 0: Auto-resize root partition to fill USB drive ---
-# Bounded with timeouts: growpart/parted can hang on VDI/loop devices where
-# there's no spare space to grow into. Total budget: 30s.
+# Runs in a subshell with set -e and pipefail DISABLED. parted/growpart can
+# block indefinitely on VDI/fixed virtual disks. The whole step is bounded
+# by an outer 'timeout 30' so it cannot stall the rest of install.sh.
 echo "[0/6] Resizing root partition to fill USB drive..."
 RESIZE_START=$(date +%s)
-do_resize() {
-    ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null || true)
-    [ -z "$ROOT_DEV" ] && { echo "  Skipping (no root device)."; return; }
+# Hard outer bound: if anything below hangs beyond 35s, kill it.
+# The subshell disables set -e and pipefail so any single failure is non-fatal.
+timeout 35 bash <<'RESIZE_EOF' 2>/dev/null
+set +e
+set +o pipefail
 
-    # Skip on loop/VDI: growpart can't help when the disk is already full.
-    if [ "$(stat -c '%t' "$ROOT_DEV" 2>/dev/null)" = "$(stat -c '%t' /dev/loop0 2>/dev/null)" ]; then
-        echo "  Skipping (loop/VDI device — already at full size)."
-        return
-    fi
+ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null)
+if [ -z "$ROOT_DEV" ]; then
+    echo "  Skipping (no root device)."
+    exit 0
+fi
 
-    DISK=$(echo "$ROOT_DEV" | sed 's/[0-9]*$//')
-    PART_NUM="${ROOT_DEV#"$DISK"}"
-    [ -z "$DISK" ] || [ -z "$PART_NUM" ] && { echo "  Skipping (parse fail: $ROOT_DEV)."; return; }
+# Detect small/fixed disks (< 4GB) → no point trying to grow, VBox/VDI.
+PARENT_DISK="${ROOT_DEV%[0-9]*}"
+DISK_SECTORS=$(timeout 5 blockdev --getsz "$PARENT_DISK" 2>/dev/null || echo 0)
+if [ "${DISK_SECTORS:-0}" -lt 8388608 ] 2>/dev/null; then  # 4 GB
+    echo "  Skipping (disk < 4GB or sector query failed; resize not needed)."
+    exit 0
+fi
 
-    # Check if resize is needed (partition < 90% of disk). Each call bounded.
-    DISK_SECTORS=$(timeout 5 blockdev --getsz "$DISK" 2>/dev/null || echo 0)
-    PART_END=$(timeout 5 parted "$DISK" unit s print 2>/dev/null | awk -v p="$PART_NUM" '$1 == p {print $3}' | tr -d 's')
-    [ -z "$DISK_SECTORS" ] || [ "$DISK_SECTORS" = "0" ] && { echo "  Skipping (no disk size info)."; return; }
-    [ -z "$PART_END" ] && { echo "  Skipping (no partition info)."; return; }
+DISK="$PARENT_DISK"
+PART_NUM="${ROOT_DEV#"$DISK"}"
+if [ -z "$DISK" ] || [ -z "$PART_NUM" ]; then
+    echo "  Skipping (parse fail: $ROOT_DEV)."
+    exit 0
+fi
 
-    THRESHOLD=$((DISK_SECTORS * 90 / 100))
-    if [ "${PART_END:-0}" -lt "$THRESHOLD" ] 2>/dev/null; then
-        timeout 10 growpart "$DISK" "$PART_NUM" 2>/dev/null || true
-        timeout 30 resize2fs "$ROOT_DEV" 2>/dev/null || true
-        echo "  Root partition resized."
-    else
-        echo "  Already at full size, skipping."
-    fi
-}
-do_resize
+PART_END=$( { timeout 5 parted "$DISK" unit s print 2>/dev/null || true; } | \
+            awk -v p="$PART_NUM" '$1 == p {print $3}' | tr -d 's')
+if [ -z "$PART_END" ]; then
+    echo "  Skipping (parted could not read partition table)."
+    exit 0
+fi
+
+THRESHOLD=$((DISK_SECTORS * 90 / 100))
+if [ "${PART_END:-0}" -lt "$THRESHOLD" ] 2>/dev/null; then
+    timeout 10 growpart "$DISK" "$PART_NUM" 2>/dev/null
+    timeout 30 resize2fs "$ROOT_DEV" 2>/dev/null
+    echo "  Root partition resized."
+else
+    echo "  Already at full size, skipping."
+fi
+RESIZE_EOF
+RESIZE_RC=$?
 ELAPSED=$(( $(date +%s) - RESIZE_START ))
-echo "  (resize step took ${ELAPSED}s)"
+if [ "$RESIZE_RC" -eq 124 ]; then
+    echo "  (resize step killed at 35s outer timeout)"
+else
+    echo "  (resize step took ${ELAPSED}s)"
+fi
 
 # --- Step 0b: Register UEFI boot entry (VirtualBox workaround) ---
 # VirtualBox's auto-created Boot0001 does not load \EFI\BOOT\BOOTx64.EFI from ESP,
