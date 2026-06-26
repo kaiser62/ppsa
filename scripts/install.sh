@@ -15,19 +15,12 @@ DATA_DIR="$PPSA_DIR/data"
 LOG_FILE="/var/log/ppsa-install.log"
 FLAG_FILE="$PPSA_DIR/.installed"
 
-# Send script output to BOTH the log file and the journal/console.
-# Use a FIFO to avoid exec-replacing fd 1, which would starve the journal.
-# ponytail: simple `tee` pipeline, one-time setup
+# Send script output to the log file. The systemd journal sees the script's
+# exit status separately; capturing stdout in a file is the only way to
+# inspect what happened on first boot. Keep it simple: no FIFO, no tee race.
+# ponytail: direct redirect — robust, no background processes to leak
 rm -f "$LOG_FILE"
-mkfifo "$LOG_FILE.pipe" 2>/dev/null || true
-if [ -p "$LOG_FILE.pipe" ]; then
-    tee -a "$LOG_FILE" < "$LOG_FILE.pipe" &
-    exec > "$LOG_FILE.pipe" 2>&1
-    trap 'rm -f "$LOG_FILE.pipe"' EXIT
-else
-    # Fallback: just write to log (journal may be silent in this case)
-    exec > "$LOG_FILE" 2>&1
-fi
+exec > "$LOG_FILE" 2>&1
 chmod 644 "$LOG_FILE" 2>/dev/null || true
 
 # Only run once
