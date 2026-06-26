@@ -75,7 +75,9 @@ jobs:
         if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          files: ppsa-usb-*.zst ppsa-usb-*.zst.sha256
+          files: |
+            ppsa-usb-*.zst
+            ppsa-usb-*.zst.sha256
           tag_name: ${{ github.ref_name || inputs.version }}
           name: PPSA ${{ github.ref_name || inputs.version }}
           draft: ${{ github.event_name == 'workflow_dispatch' }}
@@ -150,7 +152,9 @@ jobs:
         if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          files: ppsa-vbox-*.zst ppsa-vbox-*.zst.sha256
+          files: |
+            ppsa-vbox-*.zst
+            ppsa-vbox-*.zst.sha256
           tag_name: ${{ github.ref_name || inputs.version }}
           name: PPSA ${{ github.ref_name || inputs.version }}
           draft: ${{ github.event_name == 'workflow_dispatch' }}
