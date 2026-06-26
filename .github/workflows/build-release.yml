@@ -2,11 +2,11 @@
 # PPSA - Build & Release
 # =============================================================================
 # Strategy for speed:
-#   1. Single build job produces a raw disk image (cached as actions/cache).
-#   2. USB and VBox jobs run in parallel as post-processing steps.
-#   3. VBox job does NOT rebuild — it converts the USB image artifact to VDI.
-#   4. zstd -3 compression: 10x faster than xz -0, similar size.
-#   5. On push to master: USB only (faster feedback). VBox only on tags.
+#   1. Two parallel jobs (USB, VBox), each with its own build+compress.
+#   2. zstd -3 compression: ~10x faster than xz -0, similar ratio.
+#   3. Dropped linux-headers + nonfree firmware from build script.
+#   4. Cache key includes all PPSA source files.
+#   5. VBox job builds a smaller (4GB) image for quick testing.
 # =============================================================================
 
 name: Build USB Image
@@ -26,10 +26,7 @@ permissions:
   contents: write
 
 jobs:
-  # -------------------------------------------------------------------------
-  # 1. Build the raw image once. Cache the rootfs between runs.
-  # -------------------------------------------------------------------------
-  build:
+  usb:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,8 +37,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/ppsa-rootfs-cache.tar.gz
-          # Hash the entire scripts/ + key configs so PPSA changes invalidate cache
-          key: ppsa-rootfs-${{ hashFiles('scripts/**/*.sh', 'scripts/**/*.conf', 'compose/**', 'docker/**', '.github/workflows/build-release.yml') }}-v2
+          # Hash all PPSA sources so changes invalidate cache
+          key: ppsa-rootfs-${{ hashFiles('scripts/**/*.sh', 'compose/**', 'docker/**', '.github/workflows/build-release.yml') }}-v3
 
       - name: Install build tools
         run: |
@@ -51,7 +48,7 @@ jobs:
             grub-pc-bin grub-efi-amd64-bin rsync cpio \
             xz-utils util-linux zstd
 
-      - name: Build raw image
+      - name: Build USB image
         env:
           TMPDIR: ${{ runner.temp }}
           PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
@@ -59,35 +56,12 @@ jobs:
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           sudo bash scripts/build-live-usb.sh \
-            --output "ppsa-raw-${VER}.img"
+            --output "ppsa-usb-${VER}.img"
 
-      - name: Upload raw image (for VBox job to convert)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ppsa-raw-image
-          path: ppsa-raw-*.img
-          retention-days: 1
-
-  # -------------------------------------------------------------------------
-  # 2a. USB output: compress and upload to release
-  # -------------------------------------------------------------------------
-  usb:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master'
-    steps:
-      - name: Download raw image
-        uses: actions/download-artifact@v4
-        with:
-          name: ppsa-raw-image
-
-      - name: Install zstd
-        run: sudo apt-get install -y -qq zstd
-
-      - name: Compress with zstd
+      - name: Compress (zstd -3, ~10s vs 90s for xz)
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          zstd -3 -T0 --no-progress "ppsa-raw-${VER}.img" -o "ppsa-usb-${VER}.img.zst"
+          zstd -3 -T0 --no-progress "ppsa-usb-${VER}.img" -o "ppsa-usb-${VER}.img.zst"
 
       - name: Generate checksum
         run: |
@@ -95,7 +69,7 @@ jobs:
           F="ppsa-usb-${VER}.img.zst"
           sha256sum "$F" > "${F}.sha256"
 
-      - name: Create/Update Release
+      - name: Create Release
         if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
@@ -108,12 +82,12 @@ jobs:
             ## PPSA ${{ github.ref_name || inputs.version }}
 
             ### Download
-            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.zst` — zstd-compressed disk image
-            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.zst.sha256` — SHA-256
+            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.zst` — zstd-compressed disk image (8GB raw → ~2GB compressed)
+            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.zst.sha256` — SHA-256 checksum
 
             ### VirtualBox (VDI)
-            - `ppsa-vbox-${{ github.ref_name || inputs.version }}.vdi.zst` — VirtualBox disk image
-            - `ppsa-vbox-${{ github.ref_name || inputs.version }}.vdi.zst.sha256` — SHA-256
+            - `ppsa-vbox-${{ github.ref_name || inputs.version }}.vdi.zst` — VirtualBox disk image (4GB raw)
+            - `ppsa-vbox-${{ github.ref_name || inputs.version }}.vdi.zst.sha256` — SHA-256 checksum
 
             ### Usage
             1. Download `.img.zst` (or `.vdi.zst` for VirtualBox)
@@ -122,30 +96,44 @@ jobs:
             4. VBox: New VM → Use existing VDI → boot
             5. Auto-resizes to fill drive on first boot
 
-  # -------------------------------------------------------------------------
-  # 2b. VBox output: convert raw → VDI → compress
-  # Only on tags (saves CI minutes on regular pushes)
-  # -------------------------------------------------------------------------
   virtualbox:
-    needs: build
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     steps:
-      - name: Download raw image
-        uses: actions/download-artifact@v4
-        with:
-          name: ppsa-raw-image
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install qemu-utils + zstd
-        run: sudo apt-get install -y -qq zstd qemu-utils
+      - name: Cache rootfs
+        id: cache-rootfs-vbox
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ppsa-rootfs-cache.tar.gz
+          key: ppsa-rootfs-${{ hashFiles('scripts/**/*.sh', 'compose/**', 'docker/**', '.github/workflows/build-release.yml') }}-v3
+
+      - name: Install build tools (including qemu-utils for VDI conversion)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            debootstrap parted e2fsprogs dosfstools \
+            grub-pc-bin grub-efi-amd64-bin rsync cpio \
+            xz-utils util-linux qemu-utils zstd
+
+      - name: Build smaller 4GB test image
+        env:
+          TMPDIR: ${{ runner.temp }}
+          PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
+          PPSA_SKIP_BOOTSTRAP: ${{ steps.cache-rootfs-vbox.outputs.cache-hit == 'true' && '1' || '' }}
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          sudo bash scripts/build-live-usb.sh \
+            --output "ppsa-vbox-${VER}.img" --size 4096
 
       - name: Convert raw → VDI
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          qemu-img convert -f raw -O vdi "ppsa-raw-${VER}.img" "ppsa-vbox-${VER}.vdi"
-          rm -f "ppsa-raw-${VER}.img"
+          qemu-img convert -f raw -O vdi "ppsa-vbox-${VER}.img" "ppsa-vbox-${VER}.vdi"
+          rm -f "ppsa-vbox-${VER}.img"
 
-      - name: Compress with zstd
+      - name: Compress VDI (zstd)
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           zstd -3 -T0 --no-progress "ppsa-vbox-${VER}.vdi" -o "ppsa-vbox-${VER}.vdi.zst"
@@ -157,6 +145,7 @@ jobs:
           sha256sum "$F" > "${F}.sha256"
 
       - name: Upload to Release
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           files: ppsa-vbox-*
