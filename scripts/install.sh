@@ -189,7 +189,8 @@ echo "[4/6] Configuring firewall..."
 ufw --force enable 2>/dev/null || true
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22/tcp     # SSH
+ufw allow 22/tcp     # SSH (primary)
+ufw allow 10022/tcp  # SSH (alternate port)
 ufw allow 8211/udp   # Palworld game
 ufw allow 8080/tcp   # Web UI
 ufw allow 10086/tcp  # WireGuard Dashboard

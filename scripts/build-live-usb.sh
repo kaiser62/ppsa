@@ -183,6 +183,13 @@ curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-co
     -o /usr/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/lib/docker/cli-plugins/docker-compose
 
+# Install docker buildx plugin from GitHub (required for 'docker compose build')
+# Latest stable release — pin when buildx hits a known-good version.
+BUILDX_VERSION="v0.18.0"
+curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64" \
+    -o /usr/lib/docker/cli-plugins/docker-buildx
+chmod +x /usr/lib/docker/cli-plugins/docker-buildx
+
 # Networking + VPN
 apt-get install -y -qq wireguard wireguard-tools openresolv
 
