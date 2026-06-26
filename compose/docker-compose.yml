@@ -84,6 +84,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/wireguard:/etc/wireguard:rw
       - ../backups:/backups:ro
+      - ../.env:/opt/ppsa/.env:ro  # ponytail: webui reads this for /api/env (Config tab)
     cap_add:
       - NET_ADMIN
     environment:

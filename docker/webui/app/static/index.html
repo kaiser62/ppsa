@@ -422,6 +422,7 @@ async function login() {
   const pass = document.getElementById('login-pass').value;
   try {
     const res = await fetch('/api/login', {
+      method: 'POST',
       headers: { 'Authorization': 'Basic ' + btoa(user + ':' + pass) }
     });
     const data = await res.json();
@@ -480,13 +481,14 @@ async function refreshDashboard() {
   try {
     const data = await api('/api/dashboard');
     document.getElementById('stat-players').textContent = data.player_count ?? '-';
-    document.getElementById('stat-fps').textContent = data.metrics?.current_server_fps ?? '-';
-    document.getElementById('stat-uptime').textContent = data.metrics?.server_uptime ?? '-';
+    document.getElementById('stat-fps').textContent = data.metrics?.serverfps ?? '-';
+    const upSec = data.metrics?.uptime ?? 0;
+    document.getElementById('stat-uptime').textContent = formatUptime(upSec);
     document.getElementById('stat-version').textContent = data.server?.version ?? '-';
 
     const tbody = document.getElementById('player-table-body');
-    if (data.players?.length) {
-      tbody.innerHTML = data.players.map(p => `<tr><td>${e(p.name||'')}</td><td>${e(p.steamid||'')}</td><td>${p.level??'-'}</td><td>${p.ping??'-'}</td></tr>`).join('');
+    if (data.players?.players?.length) {
+      tbody.innerHTML = data.players.players.map(p => `<tr><td>${e(p.name||'')}</td><td>${e(p.steamid||'')}</td><td>${p.level??'-'}</td><td>${p.ping??'-'}</td></tr>`).join('');
     } else {
       tbody.innerHTML = '<tr><td colspan="4">No players online</td></tr>';
     }
@@ -496,9 +498,10 @@ async function refreshDashboard() {
 // --- Players ---
 async function refreshPlayers() {
   try {
-    const players = await api('/api/players');
+    const data = await api('/api/players');
+    const players = data?.players ?? data;
     const tbody = document.getElementById('player-mgmt-body');
-    if (players?.length) {
+    if (Array.isArray(players) && players.length) {
       tbody.innerHTML = players.map(p => `<tr>
         <td>${e(p.name||'')}</td>
         <td>${e(p.userid||'')}</td>
@@ -832,6 +835,17 @@ async function changePassword() {
 
 // --- Utilities ---
 function e(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function formatUptime(secs) {
+  secs = Math.max(0, Math.floor(secs || 0));
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 function showAlert(msg, type, id) {
   const el = document.getElementById(id);

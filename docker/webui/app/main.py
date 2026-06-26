@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 
 import httpx
+import docker as _docker_sdk
+_docker = _docker_sdk.from_env()
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.responses import Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer
@@ -156,17 +158,61 @@ def _read_file(path: Path) -> str:
     return path.read_text().strip()
 
 def _run(cmd: list[str]) -> str:
+    """Run a shell command and return stdout (used for /api/system disk probe)."""
+    import subprocess
     try:
         return subprocess.check_output(cmd, timeout=10, text=True).strip()
     except Exception as e:
         return str(e)
 
 def _run_docker(cmd: list[str]) -> str:
-    """Run a docker command and return stdout."""
+    """Run a docker command via the Python SDK and return stdout.
+
+    Ponytail: was subprocess.check_output(["docker"] + ...) which always
+    failed with "No such file or directory: 'docker'" because the webui
+    container has no docker CLI binary. python:3.12-slim + docker==7.1.*
+    SDK + /var/run/docker.sock mount is enough.
+    """
     try:
-        return subprocess.check_output(["docker"] + cmd, timeout=15, text=True).strip()
-    except subprocess.CalledProcessError as e:
-        return e.output.strip() if e.output else str(e)
+        sub = cmd[0] if cmd else ""
+        if sub == "ps":
+            containers = _docker.containers.list(all=True)
+            fmt = ""
+            for i, c in enumerate(cmd[1:]):
+                if c == "--format" and i + 1 < len(cmd) - 1:
+                    fmt = cmd[i + 2]
+                    break
+                if c.startswith("--format="):
+                    fmt = c.replace("--format=", "", 1)
+                    break
+            lines = []
+            for c in containers:
+                row = fmt.replace("{{.Names}}", c.name)\
+                         .replace("{{.Status}}", c.status)\
+                         .replace("{{.Image}}", c.image.tags[0] if c.image.tags else "<none>")
+                lines.append(row)
+            return "\n".join(lines)
+        if sub == "logs":
+            name = cmd[1]
+            tail = 100
+            for c in cmd:
+                if c.startswith("--tail="):
+                    tail = int(c.split("=")[1])
+                elif c == "--tail" and len(cmd) > cmd.index(c) + 1:
+                    tail = int(cmd[cmd.index(c) + 1])
+            container = _docker.containers.get(name)
+            return container.logs(tail=tail, stdout=True, stderr=True).decode("utf-8", errors="replace").strip()
+        if sub == "restart":
+            _docker.containers.get(cmd[1]).restart()
+            return f"restarted {cmd[1]}"
+        if sub == "exec":
+            container = _docker.containers.get(cmd[1])
+            exec_cmd = cmd[2:]
+            exec_result = container.exec_run(exec_cmd)
+            return exec_result.output.decode("utf-8", errors="replace").strip()
+        return f"unsupported docker subcommand: {sub}"
+    except Exception as e:
+        return f"docker error: {e}"
     except Exception as e:
         return str(e)
 
