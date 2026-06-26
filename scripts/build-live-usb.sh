@@ -156,7 +156,9 @@ echo "Installing system packages..."
 apt-get update -qq
 
 # Kernel + boot
-apt-get install -y -qq linux-image-amd64 linux-headers-amd64 firmware-linux firmware-linux-nonfree
+apt-get install -y -qq linux-image-amd64 firmware-linux
+# Skip linux-headers: server doesn't compile kernel modules.
+# Skip firmware-linux-nonfree: no proprietary WiFi needed on a server.
 # GRUB (UEFI + BIOS) needed for grub-install when building disk image
 # Use -bin packages to avoid Conflicts between grub-pc and grub-efi-amd64
 apt-get install -y -qq grub-pc-bin grub-efi-amd64-bin grub2-common
