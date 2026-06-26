@@ -15,8 +15,8 @@ The local builder reads settings from `builder.json` at the repository root.
 | github | issue_number | `1` | Issue to watch for test reports |
 | github | poll_interval_seconds | `10` | Polling interval for new comments |
 | virtualbox | vm_name | `ppsa-test` | VirtualBox VM name for testing |
-| virtualbox | memory_mb | `2048` | VM memory |
-| virtualbox | cpus | `2` | VM CPU count |
+| virtualbox | memory_mb | `8192` | VM memory (8GB+ recommended for Palworld Steam download) |
+| virtualbox | cpus | `8` | VM CPU count (4+ recommended; 2 CPUs causes RCU stalls under load) |
 | logging | retention_days | `30` | Days to keep logs |
 | logging | directory | `H:\dev\palimage\logs` | Log output directory |
 | logging | levels | `[TRACE..SUCCESS]` | Enabled log levels |

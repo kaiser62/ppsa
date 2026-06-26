@@ -58,8 +58,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2.0"   # 2-CPU VMs need ≤2; bigger hosts also fine
-          memory: 4G    # 4GB cap works on 4GB+ hosts; adjust per-machine
+          cpus: "4.0"   # 4+ core VMs/hosts only. 2-CPU VMs hit RCU stalls during Steam download
+          memory: 6G    # 6GB cap works on 8GB+ hosts; adjust per-machine
     logging:
       driver: "json-file"
       options:
@@ -91,9 +91,14 @@ services:
       PALWORLD_API_URL: http://palworld:${RESTAPI_PORT:-8212}
       PALWORLD_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       DATA_DIR: /app/data
+    # ponytail: webui starts as soon as palworld *container* starts, not when
+    # palworld becomes *healthy*. Palworld downloads 3.8GB Steam update on
+    # first run, blocking health check (rcon-cli Info) for 5+ minutes. With
+    # service_healthy, webui sits in "Created" forever. Use service_started
+    # so user can reach the WebUI while server is still downloading.
     depends_on:
       palworld:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s

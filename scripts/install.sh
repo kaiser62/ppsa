@@ -93,10 +93,30 @@ fi
 # --- Step 3: Deploy Docker stack ---
 echo "[3/6] Deploying Docker stack..."
 # Pull can fail on no-network or registry issues — don't let it kill install.
-docker compose -f compose/docker-compose.yml pull || {
+# Ponytail: one retry on transient registry corruption (empty init.sh etc).
+pull_with_retry() {
+    local max=2
+    for i in $(seq 1 $max); do
+        if docker compose -f compose/docker-compose.yml pull; then
+            return 0
+        fi
+        echo "Pull attempt $i/$max failed. Retrying in 5s..."
+        sleep 5
+    done
+    return 1
+}
+pull_with_retry || {
     echo "WARNING: docker compose pull failed (network or registry issue)."
     echo "Will try 'up' with whatever images are cached locally."
 }
+# Verify palworld image isn't corrupted (transient empty init.sh seen in v0.4.0 testing)
+if docker image inspect thijsvanloef/palworld-server-docker:latest >/dev/null 2>&1; then
+    if ! docker run --rm --entrypoint /bin/true thijsvanloef/palworld-server-docker:latest 2>/dev/null; then
+        echo "Palworld image appears corrupt. Re-pulling..."
+        docker rmi -f thijsvanloef/palworld-server-docker:latest >/dev/null 2>&1
+        docker pull thijsvanloef/palworld-server-docker:latest || echo "WARNING: re-pull failed"
+    fi
+fi
 docker compose -f compose/docker-compose.yml up -d --build || {
     echo "WARNING: Docker stack failed to start fully."
     echo "Check logs: docker compose -f $PPSA_DIR/compose/docker-compose.yml logs"

@@ -15,8 +15,8 @@
   },
   "virtualbox": {
     "vm_name": "ppsa-test",
-    "memory_mb": 2048,
-    "cpus": 2
+    "memory_mb": 8192,
+    "cpus": 8
   },
   "logging": {
     "retention_days": 30,
