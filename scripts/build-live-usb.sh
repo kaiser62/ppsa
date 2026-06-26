@@ -351,10 +351,23 @@ grub-install --target=i386-pc "$LOOP_DEV" --recheck
 update-grub
 GRUBEOF
 
-# Copy the GRUB EFI binary to the standard fallback path.
-# BOOTx64.EFI must be Shim (not GRUB directly) so it chain-loads
-# grubx64.efi with the correct device handle — this ensures GRUB
-# resolves its embedded prefix correctly and finds its config.
+# Fix the embedded prefix in the GRUB EFI binary.
+# grub-install inside the chroot embeds a loop-device-specific prefix
+# like (loop0)/boot/grub, which doesn't exist on real hardware → GRUB shell.
+# Overwrite the .prefix ELF section with a plain path.
+if [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" ]; then
+    echo -n '/boot/grub' > "$MOUNT_DIR/tmp/grub-prefix"
+    objcopy --update-section .prefix="$MOUNT_DIR/tmp/grub-prefix" \
+        "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" \
+        "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" 2>/dev/null || true
+    rm -f "$MOUNT_DIR/tmp/grub-prefix"
+    echo "GRUB prefix fixed to /boot/grub"
+fi
+
+# Copy to the standard fallback path.
+# BOOTx64.EFI must be Shim (not GRUB) so it chain-loads grubx64.efi.
+# Shim passes the correct device handle; GRUB finds prefix=/boot/grub
+# relative to ESP root → finds (esp)/boot/grub/grub.cfg → forwarding config.
 if [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/shimx64.efi" ] && \
    [ -f "$MOUNT_DIR/boot/efi/EFI/PPSA/grubx64.efi" ]; then
     mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
