@@ -375,12 +375,17 @@ grub-install --target=x86_64-efi \
     --no-nvram 2>&1
 echo "GRUB (UEFI) installed."
 
-# BIOS: install to the loop device's boot sector
-grub-install --target=i386-pc \
-    --boot-directory="$MOUNT_DIR/boot" \
-    "$LOOP_DEV" \
-    --recheck 2>&1
-echo "GRUB (BIOS) installed."
+# BIOS: optional - requires a bios_grub partition on GPT disks.
+# Skip if not available; UEFI is the primary boot path.
+if parted -s "$OUTPUT_IMG" print | grep -q bios_grub 2>/dev/null; then
+    grub-install --target=i386-pc \
+        --boot-directory="$MOUNT_DIR/boot" \
+        "$LOOP_DEV" \
+        --recheck 2>&1
+    echo "GRUB (BIOS) installed."
+else
+    echo "GRUB (BIOS) skipped - no bios_grub partition (UEFI only)."
+fi
 
 # Write /boot/grub/grub.cfg
 if [ -n "$ROOT_UUID" ]; then
