@@ -121,7 +121,7 @@ jobs:
             grub-pc-bin grub-efi-amd64-bin rsync cpio \
             xz-utils util-linux qemu-utils zstd
 
-      - name: Build smaller 4GB test image
+      - name: Build 8GB test image (enough room for Palworld Steam depots)
         env:
           TMPDIR: ${{ runner.temp }}
           PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
@@ -129,7 +129,7 @@ jobs:
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           sudo bash scripts/build-live-usb.sh \
-            --output "ppsa-vbox-${VER}.img" --size 4096
+            --output "ppsa-vbox-${VER}.img" --size 8192
 
       - name: Convert raw → VDI
         run: |
