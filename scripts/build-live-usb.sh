@@ -18,7 +18,7 @@ set -euo pipefail
 OUTPUT_IMG=""
 DEBIAN_VERSION="trixie"
 DEBIAN_MIRROR="http://deb.debian.org/debian"
-IMG_SIZE_MB=${PPSA_IMG_SIZE_MB:-8192}        # 8GB default (fills 32GB+ USB after resize2fs)
+IMG_SIZE_MB=${PPSA_IMG_SIZE_MB:-12288}       # 12GB default (Palworld=3.8GB + system=5.3GB + backups=4GB headroom; v1.1.0 had 8GB which was 98% full after first game download)
 PPSA_SRC="$(cd "$(dirname "$0")/.." && pwd)" # Repository root
 BUILD_DIR="${TMPDIR:-/tmp}/ppsa-build"
 ROOTFS_DIR="$BUILD_DIR/rootfs"

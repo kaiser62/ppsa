@@ -748,8 +748,6 @@ def _host_exec(cmd: str, timeout: int = 30) -> tuple[int, str, str]:
         return 124, "", "timeout"
     except Exception as e:
         return 1, "", str(e)
-    except Exception as e:
-        return 1, "", str(e)
 
 WIFI_CONFIG = Path("/etc/ppsa/wifi.conf")  # host path; webui runs in container but reads via exec
 
@@ -828,9 +826,23 @@ async def wifi_disconnect(_user: str = Depends(require_auth)):
 @app.post("/api/wifi/hotspot/start")
 async def wifi_hotspot_start(_user: str = Depends(require_auth)):
     """Manually start the PPSA-Setup hotspot (for re-onboarding)."""
+    # Pre-check: is there any Wi-Fi hardware at all? If not, the script will
+    # exit silently and return non-zero. Tell the user clearly instead of 500.
+    rc, out, err = _host_exec("nmcli -t -f TYPE device 2>/dev/null | grep -E '^wifi$' || true")
+    if not out.strip():
+        return {
+            "status": "no_wifi_hardware",
+            "detail": "No Wi-Fi device detected on this host. The PPSA-Setup hotspot requires a wireless interface (laptop/notebook). Use Ethernet (Wired connection) on this host.",
+        }
     rc, out, err = _host_exec("systemctl start ppsa-wifi-onboard.service 2>&1")
     if rc != 0:
-        raise HTTPException(status_code=500, detail=f"hotspot start failed: {err}")
+        # Distinguish "no wifi hardware" (silent script exit) from a real
+        # start failure. The script writes a log line we can read back.
+        log_rc, log_out, _ = _host_exec("tail -5 /var/log/ppsa-wifi.log 2>/dev/null")
+        detail = f"hotspot start failed: {err or out or '(no output)'}"
+        if log_out and "no Wi-Fi" in log_out.lower():
+            return {"status": "no_wifi_hardware", "detail": "No Wi-Fi device detected. Use Ethernet."}
+        raise HTTPException(status_code=500, detail=detail)
     return {"status": "hotspot_started", "detail": "Connect to PPSA-Setup (password: ppsa-setup-2026) and visit http://192.168.50.1/"}
 
 

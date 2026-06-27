@@ -41,7 +41,7 @@ echo "Repo: $PPSA_DIR"
 # Runs in a subshell with set -e and pipefail DISABLED. parted/growpart can
 # block indefinitely on VDI/fixed virtual disks. The whole step is bounded
 # by an outer 'timeout 30' so it cannot stall the rest of install.sh.
-echo "[0/6] Resizing root partition to fill drive..."
+echo "[0/7] Resizing root partition to fill drive..."
 RESIZE_START=$(date +%s)
 # ponytail: just attempt the resize. growpart is a no-op if the partition
 # already fills the disk; resize2fs is a no-op if the fs is at full size.
@@ -77,11 +77,11 @@ ELAPSED=$(( $(date +%s) - RESIZE_START ))
 echo "  (resize step took ${ELAPSED}s)"
 
 # --- Step 1: Ensure Docker is running ---
-echo "[1/6] Starting Docker..."
+echo "[1/7] Starting Docker..."
 systemctl start docker || true
 
 # --- Step 2: Set up environment ---
-echo "[2/6] Configuring environment..."
+echo "[2/7] Configuring environment..."
 cd "$PPSA_DIR"
 if [ ! -f .env ]; then
     if [ -f .env.example ]; then
@@ -91,7 +91,7 @@ if [ ! -f .env ]; then
 fi
 
 # --- Step 3: Deploy Docker stack ---
-echo "[3/6] Deploying Docker stack..."
+echo "[3/7] Deploying Docker stack..."
 # Pull can fail on no-network or registry issues — don't let it kill install.
 # Ponytail: one retry on transient registry corruption (empty init.sh etc).
 pull_with_retry() {
@@ -122,8 +122,26 @@ docker compose -f compose/docker-compose.yml up -d --build || {
     echo "Check logs: docker compose -f $PPSA_DIR/compose/docker-compose.yml logs"
 }
 
-# --- Step 4: Firewall ---
-echo "[4/6] Configuring firewall..."
+# --- Step 4: Install PPSA Wi-Fi onboarding service ---
+# v1.1.0 bug: the build script's chroot runs BEFORE the PPSA files are copied
+# to /opt/ppsa/, so the wifi-onboard service was never installed.
+# Install it here (on first boot) so the hotspot fallback is active.
+echo "[4/7] Installing PPSA Wi-Fi onboarding service..."
+if [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh" ] && [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" ]; then
+    chmod +x "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh"
+    cp "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" /etc/systemd/system/ppsa-wifi-onboard.service
+    systemctl daemon-reload
+    systemctl enable ppsa-wifi-onboard.service
+    # Run it once on first boot (the script is idempotent and exits silently
+    # if no Wi-Fi hardware is present, so this is safe in VMs too).
+    systemctl start ppsa-wifi-onboard.service || echo "  (wifi-onboard start deferred to next boot)"
+    echo "  ppsa-wifi-onboard.service: installed and enabled"
+else
+    echo "  WARNING: ppsa-wifi-onboard.sh/.service not found at $PPSA_DIR/scripts/"
+fi
+
+# --- Step 5: Firewall ---
+echo "[5/7] Configuring firewall..."
 ufw --force enable 2>/dev/null || true
 ufw default deny incoming
 ufw default allow outgoing
@@ -136,8 +154,8 @@ ufw allow 51820/udp  # WireGuard tunnel
 ufw allow 27015/udp  # Steam query
 ufw allow 8212/tcp   # Palworld REST API
 
-# --- Step 5: Mark complete ---
-echo "[5/6] Marking installation complete..."
+# --- Step 6: Mark complete ---
+echo "[6/7] Marking installation complete..."
 date > "$FLAG_FILE"
 
 # Get IP for summary (fallback to hostname if no non-loopback address)
