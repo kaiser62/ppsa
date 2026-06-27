@@ -85,6 +85,7 @@ services:
       - /etc/wireguard:/etc/wireguard:rw
       - ../backups:/backups:ro
       - ../.env:/opt/ppsa/.env:ro  # ponytail: webui reads this for /api/env (Config tab)
+      - /:/host:ro  # ponytail: webui needs access to host's nmcli/wpa_supplicant for Wi-Fi scan
     cap_add:
       - NET_ADMIN
     environment:

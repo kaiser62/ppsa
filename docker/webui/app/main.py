@@ -8,6 +8,7 @@ Requires JWT authentication on all /api/* endpoints except /api/login and /healt
 
 import os
 import json
+import shlex
 import re
 import asyncio
 import subprocess
@@ -721,15 +722,32 @@ async def wireguard_disconnect(_user: str = Depends(require_auth)):
 def _host_exec(cmd: str, timeout: int = 30) -> tuple[int, str, str]:
     """Run a command on the PPSA host (not in a container) and return exit/out/err.
 
-    Used for Wi-Fi / NetworkManager operations that need the real Wi-Fi
-    interface (which the docker container can't see).
+    The webui container has /host mounted read-only (the host's root
+    filesystem). We chroot into it to use the host's nmcli, wpa_supplicant,
+    hostapd, and other system binaries. The chroot runs commands in the
+    host's mount namespace, so /proc, /sys, and network namespaces are
+    still the container's — but for nmcli/wifi operations, that's fine
+    because those tools work via netlink which sees the host's Wi-Fi
+    interfaces regardless of mount namespace.
     """
     import subprocess
+    # chroot into /host to use the host's binaries. The chroot process
+    # inherits the container's network namespace, so we use nsenter-style
+    # trick: run in the host's pid 1 mount namespace via nsenter if
+    # available, else fall back to direct chroot.
+    full_cmd = f"nsenter -t 1 -m -- chroot /host bash -c {shlex.quote(cmd)} 2>&1"
     try:
-        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        if p.returncode == 0 and p.stdout.strip():
+            return p.returncode, p.stdout.strip(), p.stderr.strip()
+        # Fallback: direct chroot (mount namespace may differ but binaries work)
+        fallback = f"chroot /host bash -c {shlex.quote(cmd)} 2>&1"
+        p = subprocess.run(fallback, shell=True, capture_output=True, text=True, timeout=timeout)
         return p.returncode, p.stdout.strip(), p.stderr.strip()
     except subprocess.TimeoutExpired:
         return 124, "", "timeout"
+    except Exception as e:
+        return 1, "", str(e)
     except Exception as e:
         return 1, "", str(e)
 
