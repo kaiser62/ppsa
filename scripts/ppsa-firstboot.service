@@ -6,6 +6,11 @@ Documentation=man:ppsa
 # progress even before the install service has begun its first step.
 After=systemd-logind.service getty-pre.target
 Before=getty@tty1.service
+# Only run on first boot. After install, the .installed flag exists and
+# we never run again.
+ConditionPathExists=!/opt/ppsa/.installed
+# Stop the getty from competing for tty1 while we run.
+Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
@@ -21,11 +26,6 @@ TTYReset=yes
 TTYVHangup=yes
 # Run as root so we can read /var/log and the install flag.
 User=root
-# Only run on first boot. After install, the .installed flag exists and
-# we never run again.
-ConditionPathExists=!/opt/ppsa/.installed
-# Stop the getty from competing for tty1 while we run.
-Conflicts=getty@tty1.service
 # Don't restart on failure — if the script crashes, let the user see the
 # login prompt and diagnose.
 Restart=no

@@ -305,6 +305,11 @@ cat > /etc/systemd/system/ppsa-firstboot.service <<FIRSTBOOTEOF
 Description=PPSA First Boot Progress Display
 After=systemd-logind.service getty-pre.target
 Before=getty@tty1.service
+# Only run on first boot. After install, the .installed flag exists and
+# we never run again.
+ConditionPathExists=!/opt/ppsa/.installed
+# Stop the getty from competing for tty1 while we run.
+Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
@@ -316,8 +321,6 @@ TTYPath=/dev/tty1
 TTYReset=yes
 TTYVHangup=yes
 User=root
-ConditionPathExists=!/opt/ppsa/.installed
-Conflicts=getty@tty1.service
 Restart=no
 TimeoutStopSec=35
 
