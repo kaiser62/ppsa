@@ -18,6 +18,9 @@ PPSA_DIR="/opt/ppsa"
 DATA_DIR="$PPSA_DIR/data"
 LOG_FILE="/var/log/ppsa-install.log"
 FLAG_FILE="$PPSA_DIR/.installed"
+# Progress file watched by ppsa-firstboot.sh (tty1 progress display).
+# Single integer: the highest step number that has been entered.
+PROGRESS_FILE="/run/ppsa-install.progress"
 
 # Send script output to the log file. The systemd journal sees the script's
 # exit status separately; capturing stdout in a file is the only way to
@@ -37,11 +40,30 @@ echo "=== PPSA First Boot Setup ==="
 echo "Date: $(date)"
 echo "Repo: $PPSA_DIR"
 
+# Helper: announce the start of a step (writes to log AND progress file).
+# Total steps must match the [N/7] markers and ppsa-firstboot.sh.
+mark_step() {
+    local n="$1"
+    echo "$n" > "$PROGRESS_FILE" 2>/dev/null || true
+    echo "[STEP] Entering step $n/$TOTAL_STEPS: ${STEP_NAMES[$((n-1))]:-}"
+}
+TOTAL_STEPS=7
+STEP_NAMES=(
+    "Resizing root partition"
+    "Starting Docker"
+    "Configuring environment"
+    "Deploying Docker stack"
+    "Installing Wi-Fi onboarding"
+    "Configuring firewall"
+    "Marking installation complete"
+)
+
 # --- Step 0: Auto-resize root partition to fill USB drive ---
 # Runs in a subshell with set -e and pipefail DISABLED. parted/growpart can
 # block indefinitely on VDI/fixed virtual disks. The whole step is bounded
 # by an outer 'timeout 30' so it cannot stall the rest of install.sh.
-echo "[0/7] Resizing root partition to fill drive..."
+mark_step 1
+echo "[1/7] Resizing root partition to fill drive..."
 RESIZE_START=$(date +%s)
 # ponytail: just attempt the resize. growpart is a no-op if the partition
 # already fills the disk; resize2fs is a no-op if the fs is at full size.
@@ -77,11 +99,13 @@ ELAPSED=$(( $(date +%s) - RESIZE_START ))
 echo "  (resize step took ${ELAPSED}s)"
 
 # --- Step 1: Ensure Docker is running ---
-echo "[1/7] Starting Docker..."
+mark_step 2
+echo "[2/7] Starting Docker..."
 systemctl start docker || true
 
 # --- Step 2: Set up environment ---
-echo "[2/7] Configuring environment..."
+mark_step 3
+echo "[3/7] Configuring environment..."
 cd "$PPSA_DIR"
 if [ ! -f .env ]; then
     if [ -f .env.example ]; then
@@ -91,7 +115,8 @@ if [ ! -f .env ]; then
 fi
 
 # --- Step 3: Deploy Docker stack ---
-echo "[3/7] Deploying Docker stack..."
+mark_step 4
+echo "[4/7] Deploying Docker stack..."
 # Pull can fail on no-network or registry issues — don't let it kill install.
 # Ponytail: one retry on transient registry corruption (empty init.sh etc).
 pull_with_retry() {
@@ -126,7 +151,8 @@ docker compose -f compose/docker-compose.yml up -d --build || {
 # v1.1.0 bug: the build script's chroot runs BEFORE the PPSA files are copied
 # to /opt/ppsa/, so the wifi-onboard service was never installed.
 # Install it here (on first boot) so the hotspot fallback is active.
-echo "[4/7] Installing PPSA Wi-Fi onboarding service..."
+mark_step 5
+echo "[5/7] Installing PPSA Wi-Fi onboarding service..."
 if [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh" ] && [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" ]; then
     chmod +x "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh"
     cp "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" /etc/systemd/system/ppsa-wifi-onboard.service
@@ -141,7 +167,8 @@ else
 fi
 
 # --- Step 5: Firewall ---
-echo "[5/7] Configuring firewall..."
+mark_step 6
+echo "[6/7] Configuring firewall..."
 ufw --force enable 2>/dev/null || true
 ufw default deny incoming
 ufw default allow outgoing
@@ -155,7 +182,8 @@ ufw allow 27015/udp  # Steam query
 ufw allow 8212/tcp   # Palworld REST API
 
 # --- Step 6: Mark complete ---
-echo "[6/7] Marking installation complete..."
+mark_step 7
+echo "[7/7] Marking installation complete..."
 date > "$FLAG_FILE"
 
 # Get IP for summary (fallback to hostname if no non-loopback address)

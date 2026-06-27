@@ -291,15 +291,59 @@ SERVICEEOF
 
 systemctl enable ppsa-install
 
+# --- PPSA first-boot tty1 progress display ---
+# This service takes over /dev/tty1 during first boot, shows a live
+# progress bar + step list, and exits when install completes (or the
+# user presses a key). After it exits, the getty on tty1 takes over
+# (autologin as ppsa — see below).
+if [ -f "$PPSA_SRC/scripts/ppsa-firstboot.sh" ] && [ -f "$PPSA_SRC/scripts/ppsa-firstboot.service" ]; then
+    cp "$PPSA_SRC/scripts/ppsa-firstboot.service" /etc/systemd/system/ppsa-firstboot.service
+    systemctl enable ppsa-firstboot.service
+    echo "PPSA first-boot progress display: enabled"
+else
+    echo "WARNING: ppsa-firstboot.sh/.service not found, skipping tty1 progress UI"
+fi
+
+# --- Autologin on tty1 (after firstboot releases it) ---
+# Standard systemd pattern: drop an override for getty@tty1.service
+# that adds --autologin ppsa and skips the login prompt. The firstboot
+# service runs Before=getty@tty1 so this only kicks in after install
+# has finished and the user has dismissed the progress screen.
+mkdir -p /etc/systemd/system/getty@tty1.service.d
+cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<AUTOLOGINEOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin ppsa --noclear %I \$TERM
+AUTOLOGINEOF
+echo "Autologin on tty1: enabled (ppsa)"
+
+# --- profile.d: show a welcome message on each interactive login ---
+cat > /etc/profile.d/ppsa-welcome.sh <<WELCOMEEOF
+# Show a brief PPSA welcome on every interactive login.
+if [ -n "\$PS1" ] && [ -z "\$PPSA_WELCOME_SHOWN" ]; then
+    export PPSA_WELCOME_SHOWN=1
+    _ppsa_ip=\$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -1)
+    if [ -n "\$_ppsa_ip" ]; then
+        echo ""
+        echo "  PPSA - Palworld Server Appliance"
+        echo "  Web UI:   http://\$_ppsa_ip:8080    Login: admin / admin"
+        echo "  SSH:      ppsa@\$_ppsa_ip            Password: ppsa"
+        echo ""
+    fi
+fi
+WELCOMEEOF
+chmod 755 /etc/profile.d/ppsa-welcome.sh
+
 # --- MOTD ---
+# The first-boot progress UI runs on tty1 during install. After install
+# completes, the welcome shows the connection details. This MOTD is the
+# fallback for SSH logins (profile.d handles login display).
 cat > /etc/motd <<MOTDEOF
 ╔══════════════════════════════════════════════════╗
 ║     PPSA - Palworld Server Appliance             ║
-║     The server is starting up...                 ║
-║     Web UI:  http://(this-ip):8080               ║
-║     If the web UI is unavailable, check:         ║
-║       journalctl -u ppsa-install                 ║
-║       cat /var/log/ppsa-install.log              ║
+║     This message is the SSH/console fallback.    ║
+║     The tty1 first-boot screen will show          ║
+║     progress during install.                     ║
 ╚══════════════════════════════════════════════════╝
 MOTDEOF
 
@@ -328,6 +372,18 @@ rm -rf "$ROOTFS_DIR/opt/ppsa/build" "$ROOTFS_DIR/opt/ppsa/.git" "$ROOTFS_DIR/opt
 chmod +x "$ROOTFS_DIR/opt/ppsa/scripts/"*.sh 2>/dev/null || true
 chmod +x "$ROOTFS_DIR/opt/ppsa/oracle/"*.sh 2>/dev/null || true
 find "$ROOTFS_DIR/opt/ppsa" -type f -name "*.sh" -exec chmod +x {} \;
+
+# Stamp the version into the image so /opt/ppsa/VERSION reflects the build.
+# The CI workflow also tags releases, but this lets the running system
+# self-report its version on first boot (tty1 splash) without depending
+# on a git repo being present.
+# Derive the version from the closest git tag; fall back to a date stamp.
+PPSA_VERSION=$(cd "$PPSA_SRC" && git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)
+if [ -z "$PPSA_VERSION" ]; then
+    PPSA_VERSION="$(date -u +%Y.%m.%d)-dev"
+fi
+echo "$PPSA_VERSION" > "$ROOTFS_DIR/opt/ppsa/VERSION"
+echo "Stamped PPSA version: $PPSA_VERSION"
 
 # Create symlinks for PATH
 mkdir -p "$ROOTFS_DIR/usr/local/bin"

@@ -1,0 +1,36 @@
+[Unit]
+Description=PPSA First Boot Progress Display
+Documentation=man:ppsa
+# Start as soon as the system is up and the install service is enabled.
+# We do NOT After=ppsa-install.service because we want to start showing
+# progress even before the install service has begun its first step.
+After=systemd-logind.service getty-pre.target
+Before=getty@tty1.service
+
+[Service]
+Type=simple
+# This service owns /dev/tty1 during first boot. It writes the progress
+# UI to the tty and exits when install completes (or the user presses
+# a key), at which point getty takes over (autologin as ppsa).
+ExecStart=/opt/ppsa/scripts/ppsa-firstboot.sh
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+# Run as root so we can read /var/log and the install flag.
+User=root
+# Only run on first boot. After install, the .installed flag exists and
+# we never run again.
+ConditionPathExists=!/opt/ppsa/.installed
+# Stop the getty from competing for tty1 while we run.
+Conflicts=getty@tty1.service
+# Don't restart on failure — if the script crashes, let the user see the
+# login prompt and diagnose.
+Restart=no
+# Give the user 30s to press a key, then exit (handled inside the script).
+TimeoutStopSec=35
+
+[Install]
+WantedBy=multi-user.target
