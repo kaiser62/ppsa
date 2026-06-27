@@ -1,0 +1,19 @@
+[Unit]
+Description=PPSA Wi-Fi Onboarding (hotspot fallback + auto-connect)
+Documentation=https://github.com/kaiser62/ppsa
+After=network-pre.target NetworkManager.service
+Wants=NetworkManager.service
+Before=ppsa-install.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/ppsa/scripts/ppsa-wifi-onboard.sh
+# Restart if the Wi-Fi link drops and NM doesn't recover
+Restart=on-failure
+RestartSec=30s
+# Don't block boot if Wi-Fi init fails
+TimeoutStartSec=60s
+
+[Install]
+WantedBy=multi-user.target

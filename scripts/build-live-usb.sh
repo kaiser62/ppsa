@@ -168,9 +168,8 @@ echo "Installing system packages..."
 apt-get update -qq
 
 # Kernel + boot
-apt-get install -y -qq linux-image-amd64 firmware-linux
+apt-get install -y -qq linux-image-amd64 firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-atheros firmware-realtek firmware-brcm80211 firmware-misc-nonfree
 # Skip linux-headers: server doesn't compile kernel modules.
-# Skip firmware-linux-nonfree: no proprietary WiFi needed on a server.
 
 # GRUB bootloader - install tools in image for maintenance
 apt-get install -y -qq grub2-common
@@ -192,6 +191,14 @@ chmod +x /usr/lib/docker/cli-plugins/docker-buildx
 
 # Networking + VPN
 apt-get install -y -qq wireguard wireguard-tools openresolv
+
+# Wi-Fi onboarding (captive portal + hotspot)
+# - wpasupplicant: WPA2/WPA3 client for connecting to APs
+# - iw / wireless-tools: scan and manage Wi-Fi interfaces
+# - network-manager: modern network config daemon (auto-reconnect, priority)
+# - hostapd: software access point (for the fallback hotspot)
+# - dnsmasq: DHCP + DNS for the hotspot's clients
+apt-get install -y -qq wpasupplicant iw wireless-tools network-manager hostapd dnsmasq-base
 
 # System tools (cloud-guest-utils provides growpart for first-boot resize)
 apt-get install -y -qq \
@@ -233,6 +240,13 @@ EOF
 systemctl enable docker
 systemctl enable ssh
 systemctl enable systemd-networkd
+# PPSA Wi-Fi onboarding (hotspot fallback + auto-connect)
+# PPSA_SRC is the host repo path; we're in the chroot. The scripts are
+# already in $PPSA_SRC/scripts/, so install them by absolute path.
+cp "$PPSA_SRC/scripts/ppsa-wifi-onboard.sh" /opt/ppsa/scripts/ppsa-wifi-onboard.sh
+chmod +x /opt/ppsa/scripts/ppsa-wifi-onboard.sh
+cp "$PPSA_SRC/scripts/ppsa-wifi-onboard.service" /etc/systemd/system/ppsa-wifi-onboard.service
+systemctl enable ppsa-wifi-onboard.service
 
 # --- Network: DHCP on first Ethernet interface ---
 cat > /etc/systemd/network/20-wired.network <<NETEOF

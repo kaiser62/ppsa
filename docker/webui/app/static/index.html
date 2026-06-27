@@ -186,6 +186,7 @@
         <button onclick="showPage('config',event)">Config</button>
         <button onclick="showPage('system',event)">System</button>
         <button onclick="showPage('backup',event)">Backup</button>
+        <button onclick="showPage('wifi',event)">Wi-Fi</button>
         <button onclick="showPage('wireguard',event)">WireGuard</button>
         <button onclick="showPage('settings',event)">Settings</button>
       </div>
@@ -317,6 +318,48 @@
         <table><thead><tr><th>File</th><th>Size</th><th>Date</th></tr></thead>
           <tbody id="backup-files-body"><tr><td colspan="3">Loading...</td></tr></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Wi-Fi -->
+    <div id="page-wifi" class="page">
+      <div id="wifi-alert" class="alert"></div>
+      <p class="muted">Select a Wi-Fi network for the PPSA host to join. If no network is configured, the host will start a <strong>PPSA-Setup</strong> hotspot (password: <code>ppsa-setup-2026</code>) so you can connect to it from your phone or laptop and reach this page.</p>
+
+      <div class="card">
+        <h3>Current Connection</h3>
+        <div class="row">
+          <div><span class="muted">SSID</span> <strong id="wifi-current-ssid">—</strong></div>
+          <div><span class="muted">Signal</span> <span id="wifi-current-signal">—</span></div>
+          <div><span class="muted">IP</span> <span id="wifi-current-ip">—</span></div>
+        </div>
+        <div class="row" style="margin-top:0.5rem;gap:0.5rem;">
+          <button class="small" onclick="wifiScan()">Rescan Networks</button>
+          <button class="small" onclick="wifiHotspotStart()">Start PPSA-Setup Hotspot</button>
+          <button class="small danger" onclick="wifiDisconnect()">Disconnect</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Available Networks</h3>
+        <table>
+          <thead><tr><th>SSID</th><th>Signal</th><th>Band</th><th>Security</th><th></th></tr></thead>
+          <tbody id="wifi-network-tbody">
+            <tr><td colspan="5" class="muted">Scanning…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card" id="wifi-connect-card" style="display:none">
+        <h3>Connect to: <span id="wifi-connect-ssid"></span></h3>
+        <div class="form-group">
+          <label>Wi-Fi Password (leave blank for open networks)</label>
+          <input type="password" id="wifi-connect-password" placeholder="Network password">
+        </div>
+        <div class="row" style="margin-top:0.5rem;gap:0.5rem;">
+          <button onclick="wifiConnect()">Connect</button>
+          <button class="small" onclick="document.getElementById('wifi-connect-card').style.display='none'">Cancel</button>
+        </div>
       </div>
     </div>
 
@@ -474,6 +517,7 @@ function showPage(name, ev) {
   if (name === 'system') refreshSystem();
   if (name === 'backup') refreshBackup();
   if (name === 'wireguard') wgStatus();
+  if (name === 'wifi') wifiScan();
 }
 
 // --- Dashboard ---
@@ -711,6 +755,92 @@ async function triggerBackup() {
     setTimeout(refreshBackup, 2000);
   } catch(e) {
     showAlert('Error: ' + e.message, 'error', 'backup-alert');
+  }
+}
+
+// --- Wi-Fi ---
+async function wifiScan() {
+  const tbody = document.getElementById('wifi-network-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="muted">Scanning…</td></tr>';
+  try {
+    const r = await api('/api/wifi/scan');
+    document.getElementById('wifi-current-ssid').textContent = (r.networks.find(n => n.connected) || {}).ssid || '—';
+    const cur = r.networks.find(n => n.connected);
+    document.getElementById('wifi-current-signal').textContent = cur ? cur.signal_pct + '%' : '—';
+    document.getElementById('wifi-current-ip').textContent = cur ? (await fetch('/api/system').then(r => r.json()).then(s => s.host_ip || '—').catch(() => '—')) : '—';
+    if (r.networks.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">No networks found. Make sure Wi-Fi hardware is available.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = r.networks.map(n => {
+      const bars = n.bars || '....';
+      const band = n.freq_mhz > 5000 ? '5 GHz' : (n.freq_mhz > 0 ? '2.4 GHz' : '?');
+      const sec = n.security || 'Open';
+      const conn = n.connected ? ' <span class="badge ok">connected</span>' : '';
+      const secIcon = sec === 'Open' ? '🔓' : '🔒';
+      const escapedSsid = n.ssid.replace(/'/g, "\\'");
+      return `<tr>
+        <td><strong>${e(n.ssid)}</strong>${conn}</td>
+        <td>${bars} (${n.signal_pct}%)</td>
+        <td>${band}</td>
+        <td>${secIcon} ${e(sec)}</td>
+        <td><button class="small" onclick="wifiShowConnect('${escapedSsid}', ${sec === 'Open' ? 'true' : 'false'})">Connect</button></td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red)">Error: ${e(err.message)}</td></tr>`;
+  }
+}
+
+function wifiShowConnect(ssid, isOpen) {
+  document.getElementById('wifi-connect-ssid').textContent = ssid;
+  document.getElementById('wifi-connect-card').style.display = '';
+  document.getElementById('wifi-connect-password').value = '';
+  if (isOpen) {
+    document.getElementById('wifi-connect-password').placeholder = '(open network — no password)';
+    document.getElementById('wifi-connect-password').disabled = true;
+  } else {
+    document.getElementById('wifi-connect-password').placeholder = 'Network password';
+    document.getElementById('wifi-connect-password').disabled = false;
+  }
+}
+
+async function wifiConnect() {
+  const ssid = document.getElementById('wifi-connect-ssid').textContent;
+  const password = document.getElementById('wifi-connect-password').value;
+  const alertEl = document.getElementById('wifi-alert');
+  alertEl.textContent = 'Connecting to ' + ssid + '...';
+  alertEl.className = 'alert show';
+  alertEl.style.background = 'rgba(234, 179, 8, 0.2)';
+  try {
+    const r = await api('/api/wifi/connect', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ ssid, password }) });
+    alertEl.textContent = 'Connected to ' + ssid + '! PPSA will auto-reconnect on reboot.';
+    alertEl.style.background = 'rgba(34, 197, 94, 0.2)';
+    document.getElementById('wifi-connect-card').style.display = 'none';
+    setTimeout(wifiScan, 2000);
+  } catch (err) {
+    alertEl.textContent = 'Connection failed: ' + err.message;
+    alertEl.style.background = 'rgba(239, 68, 68, 0.2)';
+  }
+}
+
+async function wifiDisconnect() {
+  if (!confirm('Disconnect from current Wi-Fi network?')) return;
+  try {
+    await api('/api/wifi/disconnect', { method: 'POST' });
+    setTimeout(wifiScan, 1000);
+  } catch (err) {
+    alert('Disconnect failed: ' + err.message);
+  }
+}
+
+async function wifiHotspotStart() {
+  if (!confirm('Start the PPSA-Setup hotspot? You will need to reconnect to "PPSA-Setup" Wi-Fi (password: ppsa-setup-2026) to manage this device.')) return;
+  try {
+    await api('/api/wifi/hotspot/start', { method: 'POST' });
+    alert('PPSA-Setup hotspot started. Connect your phone to "PPSA-Setup" and visit http://192.168.50.1/');
+  } catch (err) {
+    alert('Failed: ' + err.message);
   }
 }
 

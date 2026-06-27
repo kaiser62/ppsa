@@ -12,6 +12,9 @@ host disk, no operating system required on the host.
 
 ## What you get
 
+- **Plug-and-boot Wi-Fi setup** — the USB serves a `PPSA-Setup` hotspot on first boot
+  so any laptop can connect and select a Wi-Fi network from the Web UI
+  ([docs](docs/wifi-onboarding.md))
 - **Debian 13 (Trixie)** with kernel 6.12 LTS, booted directly from a USB/SSD/VDI
 - **Docker Engine + Docker Compose v2** with the full PPSA stack:
   - **Palworld server** (`thijsvanloef/palworld-server-docker`) — Steam auto-update
@@ -143,6 +146,7 @@ First boot is identical: ~3-10 min for the install, then `http://<bridged-ip>:80
 | Palworld REST API | `8212/tcp` | n/a (internal) | `admin` if set in `.env` |
 | Web UI | `8080/tcp` | `http://<ip>:8080` | `admin:admin` ⚠️ change! |
 | WireGuard Dashboard | `10086/tcp` | `http://<ip>:10086` | (set in WebUI tunnel setup) |
+| **PPSA-Setup Wi-Fi hotspot** | Wi-Fi 2.4 GHz | SSID `PPSA-Setup`, pwd `ppsa-setup-2026` | (auto on first boot) |
 | SSH (ppsa) | `22/tcp` | `ssh ppsa@<ip>` | `ppsa` |
 | SSH (artho) | `10022/tcp` | `ssh artho@<ip> -p 10022` | `artho` / `arthoroy` |
 
@@ -218,6 +222,7 @@ Build time: ~5-7 minutes from a clean cache, ~3 minutes with cached rootfs.
 ## Documentation
 
 - [docs/installation.md](docs/installation.md) — Detailed install steps
+- [docs/wifi-onboarding.md](docs/wifi-onboarding.md) — **Wi-Fi setup portal** (PPSA-Setup hotspot)
 - [docs/oracle-setup.md](docs/oracle-setup.md) — Oracle Cloud VPS setup for WireGuard
 - [docs/wireguard-setup.md](docs/wireguard-setup.md) — Tunnel configuration
 - [docs/architecture.md](docs/architecture.md) — System design

@@ -716,6 +716,107 @@ async def wireguard_disconnect(_user: str = Depends(require_auth)):
 
 
 # ---------------------------------------------------------------------------
+# Wi-Fi management (runs on the host, not in this container)
+# ---------------------------------------------------------------------------
+def _host_exec(cmd: str, timeout: int = 30) -> tuple[int, str, str]:
+    """Run a command on the PPSA host (not in a container) and return exit/out/err.
+
+    Used for Wi-Fi / NetworkManager operations that need the real Wi-Fi
+    interface (which the docker container can't see).
+    """
+    import subprocess
+    try:
+        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout.strip(), p.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return 124, "", "timeout"
+    except Exception as e:
+        return 1, "", str(e)
+
+WIFI_CONFIG = Path("/etc/ppsa/wifi.conf")  # host path; webui runs in container but reads via exec
+
+@app.get("/api/wifi/status")
+async def wifi_status(_user: str = Depends(require_auth)):
+    """Current Wi-Fi connection status, available networks, and hotspot state."""
+    rc, out, err = _host_exec("nmcli -t -f ACTIVE,SSID,SIGNAL,FREQ,SECURITY,IN-USE device wifi 2>/dev/null; echo ---; nmcli -t -f NAME,UUID,TYPE,DEVICE,STATE connection --active 2>/dev/null; echo ---; systemctl is-active ppsa-hotspot 2>/dev/null")
+    if rc != 0 and not out:
+        raise HTTPException(status_code=500, detail=f"nmcli failed: {err}")
+    return {
+        "nmcli_output": out,
+        "hotspot_active": "active" in out.lower() if out else False,
+    }
+
+@app.get("/api/wifi/scan")
+async def wifi_scan(_user: str = Depends(require_auth)):
+    """Trigger a Wi-Fi rescan and return the list of visible networks."""
+    # Force rescan
+    _host_exec("nmcli device wifi rescan 2>/dev/null", timeout=15)
+    # Read the cache
+    rc, out, err = _host_exec("nmcli -t -f SSID,SIGNAL,BARS,FREQ,SECURITY,IN-USE device wifi 2>/dev/null")
+    if rc != 0:
+        raise HTTPException(status_code=500, detail=f"scan failed: {err}")
+    networks = []
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split(":")
+        if len(parts) < 5:
+            continue
+        ssid, signal, bars, freq, security = parts[0], parts[1], parts[2], parts[3], ":".join(parts[4:])
+        if not ssid or ssid == "--":
+            continue
+        networks.append({
+            "ssid": ssid,
+            "signal_pct": int(signal) if signal.isdigit() else 0,
+            "bars": bars,
+            "freq_mhz": int(freq) if freq.isdigit() else 0,
+            "security": security or "Open",
+            "connected": "*" in bars or "in-use" in security.lower(),
+        })
+    # Sort by signal strength (strongest first)
+    networks.sort(key=lambda n: -n["signal_pct"])
+    return {"networks": networks, "count": len(networks)}
+
+@app.post("/api/wifi/connect")
+async def wifi_connect(data: dict, _user: str = Depends(require_auth)):
+    """Connect to a Wi-Fi network (SSID + password). Stops the hotspot first."""
+    ssid = (data.get("ssid") or "").strip()
+    psk = (data.get("password") or "").strip()
+    if not ssid:
+        raise HTTPException(status_code=400, detail="ssid required")
+    if not psk:
+        # Open network - use empty password
+        connect_cmd = f"nmcli device wifi connect '{ssid}'"
+    else:
+        # Escape single quotes in password
+        psk_escaped = psk.replace("'", "'\\''")
+        connect_cmd = f"nmcli device wifi connect '{ssid}' password '{psk_escaped}'"
+    rc, out, err = _host_exec(connect_cmd, timeout=60)
+    if rc != 0:
+        raise HTTPException(status_code=500, detail=f"connect failed: {err or out}")
+    # Save the creds so we auto-reconnect on reboot
+    _host_exec(f"mkdir -p /etc/ppsa && printf 'SSID=%q\\nPSK=%q\\n' '{ssid}' '{psk}' > /etc/ppsa/wifi.conf")
+    # Stop the hotspot (no longer needed)
+    _host_exec("systemctl stop hostapd 2>/dev/null; nmcli con down ppsa-hotspot 2>/dev/null; true")
+    return {"status": "connected", "ssid": ssid, "detail": out}
+
+@app.post("/api/wifi/disconnect")
+async def wifi_disconnect(_user: str = Depends(require_auth)):
+    """Disconnect from current Wi-Fi and stop the hotspot (use Ethernet)."""
+    _host_exec("nmcli connection down id '$(nmcli -t -f NAME,UUID connection --active | head -1 | cut -d: -f1)' 2>/dev/null; true")
+    _host_exec("rm -f /etc/ppsa/wifi.conf 2>/dev/null; true")
+    return {"status": "disconnected"}
+
+@app.post("/api/wifi/hotspot/start")
+async def wifi_hotspot_start(_user: str = Depends(require_auth)):
+    """Manually start the PPSA-Setup hotspot (for re-onboarding)."""
+    rc, out, err = _host_exec("systemctl start ppsa-wifi-onboard.service 2>&1")
+    if rc != 0:
+        raise HTTPException(status_code=500, detail=f"hotspot start failed: {err}")
+    return {"status": "hotspot_started", "detail": "Connect to PPSA-Setup (password: ppsa-setup-2026) and visit http://192.168.50.1/"}
+
+
+# ---------------------------------------------------------------------------
 # Serve static frontend
 # ---------------------------------------------------------------------------
 FRONTEND_DIR = Path(__file__).parent / "static"
