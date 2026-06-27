@@ -296,13 +296,36 @@ systemctl enable ppsa-install
 # progress bar + step list, and exits when install completes (or the
 # user presses a key). After it exits, the getty on tty1 takes over
 # (autologin as ppsa — see below).
-if [ -f "$PPSA_SRC/scripts/ppsa-firstboot.sh" ] && [ -f "$PPSA_SRC/scripts/ppsa-firstboot.service" ]; then
-    cp "$PPSA_SRC/scripts/ppsa-firstboot.service" /etc/systemd/system/ppsa-firstboot.service
-    systemctl enable ppsa-firstboot.service
-    echo "PPSA first-boot progress display: enabled"
-else
-    echo "WARNING: ppsa-firstboot.sh/.service not found, skipping tty1 progress UI"
-fi
+# The ppsa-firstboot.sh and .service files are copied to
+# /opt/ppsa/scripts/ by the post-chroot `cp -a "$PPSA_SRC/."
+# "$ROOTFS_DIR/opt/ppsa/"` step. We pre-write the .service here
+# (the chroot runs before the cp) and enable it.
+cat > /etc/systemd/system/ppsa-firstboot.service <<FIRSTBOOTEOF
+[Unit]
+Description=PPSA First Boot Progress Display
+After=systemd-logind.service getty-pre.target
+Before=getty@tty1.service
+
+[Service]
+Type=simple
+ExecStart=/opt/ppsa/scripts/ppsa-firstboot.sh
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+User=root
+ConditionPathExists=!/opt/ppsa/.installed
+Conflicts=getty@tty1.service
+Restart=no
+TimeoutStopSec=35
+
+[Install]
+WantedBy=multi-user.target
+FIRSTBOOTEOF
+systemctl enable ppsa-firstboot.service
+echo "PPSA first-boot progress display: enabled"
 
 # --- Autologin on tty1 (after firstboot releases it) ---
 # Standard systemd pattern: drop an override for getty@tty1.service
