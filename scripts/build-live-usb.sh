@@ -240,13 +240,19 @@ EOF
 systemctl enable docker
 systemctl enable ssh
 systemctl enable systemd-networkd
-# PPSA Wi-Fi onboarding (hotspot fallback + auto-connect)
-# PPSA_SRC is the host repo path; we're in the chroot. The scripts are
-# already in $PPSA_SRC/scripts/, so install them by absolute path.
-cp "$PPSA_SRC/scripts/ppsa-wifi-onboard.sh" /opt/ppsa/scripts/ppsa-wifi-onboard.sh
-chmod +x /opt/ppsa/scripts/ppsa-wifi-onboard.sh
-cp "$PPSA_SRC/scripts/ppsa-wifi-onboard.service" /etc/systemd/system/ppsa-wifi-onboard.service
-systemctl enable ppsa-wifi-onboard.service
+# PPSA Wi-Fi onboarding (hotspot fallback + auto-connect).
+# PPSA files (including this script + ppsa-wifi-onboard.sh and
+# ppsa-wifi-onboard.service) were already copied to /opt/ppsa/ by the
+# earlier `cp -a "$PPSA_SRC/." "$ROOTFS_DIR/opt/ppsa/"` call. The
+# service file lives in /etc/systemd/system/.
+if [ -f /opt/ppsa/scripts/ppsa-wifi-onboard.sh ]; then
+    chmod +x /opt/ppsa/scripts/ppsa-wifi-onboard.sh
+    cp /opt/ppsa/scripts/ppsa-wifi-onboard.service /etc/systemd/system/ppsa-wifi-onboard.service
+    systemctl enable ppsa-wifi-onboard.service
+    echo "PPSA Wi-Fi onboarding: enabled"
+else
+    echo "WARNING: ppsa-wifi-onboard.sh not found, skipping"
+fi
 
 # --- Network: DHCP on first Ethernet interface ---
 cat > /etc/systemd/network/20-wired.network <<NETEOF
