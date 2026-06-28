@@ -254,6 +254,49 @@ else
     echo "WARNING: ppsa-wifi-onboard.sh not found, skipping"
 fi
 
+# PPSA WireGuard auto-registration: install register script + bake config.
+# The register script is run by install.sh on first boot. The config file
+# /etc/ppsa/wireguard.json contains the wg-easy API endpoint and credentials
+# so the host can self-register as a peer in the PPSA gaming network.
+if [ -f /opt/ppsa/scripts/ppsa-wireguard-register.sh ]; then
+    chmod +x /opt/ppsa/scripts/ppsa-wireguard-register.sh
+    echo "PPSA WireGuard register: script installed"
+else
+    echo "WARNING: ppsa-wireguard-register.sh not found, skipping"
+fi
+
+# Write the wireguard.json config (baked into the image).
+# Build-time: PPSA_WG_API_URL, PPSA_WG_API_USER, PPSA_WG_API_PASS, PPSA_WG_PEER_NAME
+# can be set as env vars when running build-live-usb.sh. If not set, the
+# config file is left for the user to fill in via the WebUI.
+mkdir -p /etc/ppsa
+chmod 755 /etc/ppsa
+if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PPSA_WG_API_PASS:-}" ]; then
+    cat > /etc/ppsa/wireguard.json <<WGEOF
+{
+  "enabled": true,
+  "api_url": "${PPSA_WG_API_URL}",
+  "api_user": "${PPSA_WG_API_USER}",
+  "api_password": "${PPSA_WG_API_PASS}",
+  "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}"
+}
+WGEOF
+    chmod 600 /etc/ppsa/wireguard.json
+    echo "PPSA WireGuard config: baked in (peer: ${PPSA_WG_PEER_NAME:-ppsa-server})"
+else
+    cat > /etc/ppsa/wireguard.json <<WGEOF
+{
+  "enabled": false,
+  "api_url": "",
+  "api_user": "",
+  "api_password": "",
+  "peer_name": "ppsa-server"
+}
+WGEOF
+    chmod 600 /etc/ppsa/wireguard.json
+    echo "PPSA WireGuard config: not configured (set PPSA_WG_* env vars to bake in)"
+fi
+
 # --- Network: DHCP on first Ethernet interface ---
 cat > /etc/systemd/network/20-wired.network <<NETEOF
 [Match]

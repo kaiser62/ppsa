@@ -32,13 +32,14 @@ PROGRESS_FILE="/run/ppsa-install.progress"  # written by install.sh
 SERVICE_NAME="ppsa-install.service"
 
 # Total steps in install.sh (must match).
-TOTAL_STEPS=7
+TOTAL_STEPS=8
 STEP_NAMES=(
     "Resizing root partition"
     "Starting Docker"
     "Configuring environment"
     "Deploying Docker stack"
     "Installing Wi-Fi onboarding"
+    "Connecting to WireGuard network"
     "Configuring firewall"
     "Marking installation complete"
 )
@@ -63,8 +64,8 @@ get_current_step() {
         return
     fi
     if [[ -f "$LOG_FILE" ]]; then
-        # Look for the highest [N/7] marker
-        grep -oP '\[\d/7\]' "$LOG_FILE" 2>/dev/null \
+        # Look for the highest [N/8] marker (or [N/7] for older installs)
+        grep -oP '\[\d/[78]\]' "$LOG_FILE" 2>/dev/null \
             | grep -oP '\d' \
             | sort -n \
             | tail -1 || echo 0
@@ -153,12 +154,27 @@ ${GREEN}${BOLD}╔════════════════════�
 
 EOF
         if [[ -n "$ip" ]]; then
+            # Read WireGuard IP if registered
+            wg_ip=""
+            [[ -r /run/ppsa-wireguard-ip ]] && wg_ip=$(cat /run/ppsa-wireguard-ip 2>/dev/null || true)
+
             cat <<EOF
   ${BOLD}Web UI:${RESET}       ${CYAN}http://${ip}:8080${RESET}            ${DIM}Login: admin / admin${RESET}
   ${BOLD}WireGuard UI:${RESET}  ${CYAN}http://${ip}:10086${RESET}
   ${BOLD}SSH:${RESET}          ${CYAN}ppsa@${ip}${RESET}                  ${DIM}Password: ppsa${RESET}
+EOF
+            if [[ -n "$wg_ip" ]]; then
+                cat <<EOF
+  ${BOLD}WireGuard:${RESET}    ${CYAN}${wg_ip}${RESET}                    ${DIM}PPSA gaming network${RESET}
+  ${DIM}Players connect via pleaseee.eu.org:51830 (wg-easy UI: :51831)${RESET}
 
 EOF
+            else
+                cat <<EOF
+  ${DIM}WireGuard: not connected (can be configured via WebUI)${RESET}
+
+EOF
+            fi
         else
             cat <<EOF
   ${DIM}Waiting for network to come up...${RESET}

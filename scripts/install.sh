@@ -54,6 +54,7 @@ STEP_NAMES=(
     "Configuring environment"
     "Deploying Docker stack"
     "Installing Wi-Fi onboarding"
+    "Connecting to WireGuard network"
     "Configuring firewall"
     "Marking installation complete"
 )
@@ -63,7 +64,7 @@ STEP_NAMES=(
 # block indefinitely on VDI/fixed virtual disks. The whole step is bounded
 # by an outer 'timeout 30' so it cannot stall the rest of install.sh.
 mark_step 1
-echo "[1/7] Resizing root partition to fill drive..."
+echo "[1/8] Resizing root partition to fill drive..."
 RESIZE_START=$(date +%s)
 # ponytail: just attempt the resize. growpart is a no-op if the partition
 # already fills the disk; resize2fs is a no-op if the fs is at full size.
@@ -100,12 +101,12 @@ echo "  (resize step took ${ELAPSED}s)"
 
 # --- Step 1: Ensure Docker is running ---
 mark_step 2
-echo "[2/7] Starting Docker..."
+echo "[2/8] Starting Docker..."
 systemctl start docker || true
 
 # --- Step 2: Set up environment ---
 mark_step 3
-echo "[3/7] Configuring environment..."
+echo "[3/8] Configuring environment..."
 cd "$PPSA_DIR"
 if [ ! -f .env ]; then
     if [ -f .env.example ]; then
@@ -116,7 +117,7 @@ fi
 
 # --- Step 3: Deploy Docker stack ---
 mark_step 4
-echo "[4/7] Deploying Docker stack..."
+echo "[4/8] Deploying Docker stack..."
 # Pull can fail on no-network or registry issues — don't let it kill install.
 # Ponytail: one retry on transient registry corruption (empty init.sh etc).
 pull_with_retry() {
@@ -152,7 +153,7 @@ docker compose -f compose/docker-compose.yml up -d --build || {
 # to /opt/ppsa/, so the wifi-onboard service was never installed.
 # Install it here (on first boot) so the hotspot fallback is active.
 mark_step 5
-echo "[5/7] Installing PPSA Wi-Fi onboarding service..."
+echo "[5/8] Installing PPSA Wi-Fi onboarding service..."
 if [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh" ] && [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" ]; then
     chmod +x "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh"
     cp "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" /etc/systemd/system/ppsa-wifi-onboard.service
@@ -166,9 +167,32 @@ else
     echo "  WARNING: ppsa-wifi-onboard.sh/.service not found at $PPSA_DIR/scripts/"
 fi
 
-# --- Step 5: Firewall ---
+# --- Step 5: Auto-register as a peer in the PPSA WireGuard network ---
+# v1.1.x: connects to the wg-easy instance configured in
+# /etc/ppsa/wireguard.json (baked into the image at build time). If the
+# wg-easy API is unreachable (e.g., port forwarding not yet set up on the
+# user's router), the script logs a warning and continues — registration
+# can be retried later via the WebUI.
 mark_step 6
-echo "[6/7] Configuring firewall..."
+echo "[6/8] Connecting to PPSA WireGuard network..."
+if [ -f "$PPSA_DIR/scripts/ppsa-wireguard-register.sh" ]; then
+    chmod +x "$PPSA_DIR/scripts/ppsa-wireguard-register.sh"
+    # Run with timeout; registration should take <30s in normal cases.
+    timeout 60 "$PPSA_DIR/scripts/ppsa-wireguard-register.sh" || {
+        RC=$?
+        if [ $RC -eq 124 ]; then
+            echo "  WireGuard registration timed out (will retry on next boot)"
+        else
+            echo "  WireGuard registration skipped (rc=$RC). Can be retried via WebUI."
+        fi
+    }
+else
+    echo "  ppsa-wireguard-register.sh not found, skipping"
+fi
+
+# --- Step 6: Firewall ---
+mark_step 7
+echo "[7/8] Configuring firewall..."
 ufw --force enable 2>/dev/null || true
 ufw default deny incoming
 ufw default allow outgoing
@@ -177,13 +201,14 @@ ufw allow 10022/tcp  # SSH (alternate port)
 ufw allow 8211/udp   # Palworld game
 ufw allow 8080/tcp   # Web UI
 ufw allow 10086/tcp  # WireGuard Dashboard
-ufw allow 51820/udp  # WireGuard tunnel
+ufw allow 51820/udp  # WireGuard tunnel (admin)
+ufw allow 51830/udp  # WireGuard tunnel (PPSA gaming)
 ufw allow 27015/udp  # Steam query
 ufw allow 8212/tcp   # Palworld REST API
 
-# --- Step 6: Mark complete ---
-mark_step 7
-echo "[7/7] Marking installation complete..."
+# --- Step 7: Mark complete ---
+mark_step 8
+echo "[8/8] Marking installation complete..."
 date > "$FLAG_FILE"
 
 # Get IP for summary (fallback to hostname if no non-loopback address)
