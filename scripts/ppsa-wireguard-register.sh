@@ -5,7 +5,7 @@
 #
 # Flow:
 #   1. Read config from /etc/ppsa/wireguard.json
-#   2. HTTP Basic auth to wg-easy API
+#   2. Session-cookie auth to wg-easy API (POST /api/session)
 #   3. Check if peer with our hostname already exists
 #   4. If not, create the peer via API
 #   5. Download the .conf file
@@ -56,12 +56,47 @@ if [[ ! -f "${CONFIG_FILE}" ]]; then
     exit 1
 fi
 
-# Read config (lightweight JSON parsing with grep/sed — no jq dependency)
-API_URL=$(grep -oP '"api_url"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
-API_USER=$(grep -oP '"api_user"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
-API_PASS=$(grep -oP '"api_password"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
-PEER_NAME=$(grep -oP '"peer_name"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
-ENABLED=$(grep -oP '"enabled"\s*:\s*\K(true|false)' "${CONFIG_FILE}" 2>/dev/null || true)
+# Read config (use python3 for proper JSON parsing — grep/sed regex is broken
+# on JSON values that contain escaped quotes or backslashes).
+# Falls back to grep if python3 is unavailable.
+if command -v python3 >/dev/null 2>&1; then
+    # Write parsed values to a tmp file (avoid eval security issues).
+    # The python script is written to a separate file first to avoid
+    # bash heredoc backslash/escape issues with newlines and quotes.
+    CONFIG_VALS=$(mktemp)
+    PARSER_SCRIPT=$(mktemp --suffix=.py)
+    cat > "${PARSER_SCRIPT}" <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = json.load(f)
+    with open(sys.argv[2], 'w') as out:
+        out.write('API_URL=' + repr(c.get('api_url', '')) + '\n')
+        out.write('API_USER=' + repr(c.get('api_user', '')) + '\n')
+        out.write('API_PASS=' + repr(c.get('api_password', '')) + '\n')
+        out.write('PEER_NAME=' + repr(c.get('peer_name', '')) + '\n')
+        out.write('ENABLED=' + repr(str(c.get('enabled', False)).lower()) + '\n')
+except Exception as e:
+    sys.stderr.write('JSON parse error: ' + str(e) + '\n')
+    sys.exit(1)
+PYEOF
+    python3 "${PARSER_SCRIPT}" "${CONFIG_FILE}" "${CONFIG_VALS}" || {
+        rm -f "${CONFIG_VALS}" "${PARSER_SCRIPT}"
+        log "Failed to parse ${CONFIG_FILE} as JSON"
+        fail "Invalid config file" 1
+    }
+    # shellcheck disable=SC1090
+    . "${CONFIG_VALS}"
+    rm -f "${CONFIG_VALS}" "${PARSER_SCRIPT}"
+else
+    # Fallback: grep-based parsing (broken on escaped chars but better than nothing)
+    log "WARN: python3 not available, using fallback grep parser (broken on JSON escapes)"
+    API_URL=$(grep -oP '"api_url"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
+    API_USER=$(grep -oP '"api_user"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
+    API_PASS=$(grep -oP '"api_password"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
+    PEER_NAME=$(grep -oP '"peer_name"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
+    ENABLED=$(grep -oP '"enabled"\s*:\s*\K(true|false)' "${CONFIG_FILE}" 2>/dev/null || true)
+fi
 
 if [[ -z "${API_URL}" || -z "${API_USER}" || -z "${API_PASS}" ]]; then
     fail "Missing api_url, api_user, or api_password in ${CONFIG_FILE}" 1
@@ -77,28 +112,67 @@ PEER_NAME="${PEER_NAME:-ppsa-$(hostname -s)}"
 log "Using peer name: ${PEER_NAME}"
 
 # ============================================================================
-# 2. Build auth header
+# 2. Authenticate to wg-easy (session-cookie)
 # ============================================================================
-AUTH_HEADER="Authorization: Basic $(printf '%s:%s' "${API_USER}" "${API_PASS}" | base64 -w0)"
+# wg-easy v15 dropped HTTP Basic auth. We POST credentials to /api/session
+# and save the returned Set-Cookie into a file. All subsequent calls
+# present that cookie via -b.
+COOKIE_FILE="/tmp/ppsa-wg-cookies.txt"
+# Sensitive — make sure it's not world-readable.
+touch "${COOKIE_FILE}"
+chmod 600 "${COOKIE_FILE}"
 
-# ============================================================================
-# 3. Test API reachability
-# ============================================================================
-log "Testing API at ${API_URL}..."
-if ! curl -fsS -m 10 -o /dev/null -H "${AUTH_HEADER}" "${API_URL}/api/client"; then
-    log "API unreachable or auth failed at ${API_URL}"
-    log "Check that wg-easy is running and credentials are correct"
-    log "(wireguard can be configured later via WebUI)"
-    exit 2
-fi
-log "API reachable"
+login_and_get_cookies() {
+    log "Logging in to wg-easy API at ${API_URL} as '${API_USER}'..."
+
+    # Build the JSON body via python so passwords with quotes / backslashes /
+    # unicode are escaped correctly. Sourcing them via env vars avoids
+    # putting the secret on the process command line.
+    local login_body tmp_body http_code
+    login_body=$(API_USER="${API_USER}" API_PASS="${API_PASS}" python3 -c \
+        'import json, os; print(json.dumps({"username": os.environ["API_USER"], "password": os.environ["API_PASS"], "remember": False}))')
+
+    tmp_body=$(mktemp)
+    http_code=$(curl -sS -m 10 -o "${tmp_body}" -w "%{http_code}" \
+        -c "${COOKIE_FILE}" \
+        -H "Content-Type: application/json" \
+        -X POST \
+        -d "${login_body}" \
+        "${API_URL}/api/session") || {
+            log "Could not reach ${API_URL}/api/session (curl exit $?)"
+            log "Check that wg-easy is running and reachable from this host"
+            rm -f "${tmp_body}" "${COOKIE_FILE}"
+            fail "API unreachable" 2
+        }
+
+    if [[ "${http_code}" != "200" && "${http_code}" != "201" && "${http_code}" != "204" ]]; then
+        log "Login failed with HTTP ${http_code}"
+        log "Response: $(head -c 200 "${tmp_body}")"
+        log "Check api_user and api_password in ${CONFIG_FILE}"
+        rm -f "${tmp_body}" "${COOKIE_FILE}"
+        fail "Authentication failed" 3
+    fi
+
+    rm -f "${tmp_body}"
+
+    if [[ ! -s "${COOKIE_FILE}" ]]; then
+        log "Login returned HTTP ${http_code} but no session cookie was set"
+        log "(wg-easy v15 may have changed its session-cookie name)"
+        rm -f "${COOKIE_FILE}"
+        fail "Authentication failed" 3
+    fi
+
+    log "Login successful (session cookie saved)"
+}
+
+login_and_get_cookies
 
 # ============================================================================
 # 4. Check if peer already exists
 # ============================================================================
 log "Checking if peer '${PEER_NAME}' already exists..."
 
-EXISTING_ID=$(curl -fsS -m 10 -H "${AUTH_HEADER}" "${API_URL}/api/client" 2>/dev/null \
+EXISTING_ID=$(curl -fsS -m 10 -b "${COOKIE_FILE}" "${API_URL}/api/client" 2>/dev/null \
     | python3 -c "
 import sys, json
 try:
@@ -125,7 +199,7 @@ else
     EXPIRES_AT=$(date -u -d '+100 years' '+%Y-%m-%dT%H:%M:%S.000Z')
 
     CREATE_RESPONSE=$(curl -fsS -m 10 \
-        -H "${AUTH_HEADER}" \
+        -b "${COOKIE_FILE}" \
         -H "Content-Type: application/json" \
         -X POST \
         -d "{\"name\": \"${PEER_NAME}\", \"expiresAt\": \"${EXPIRES_AT}\"}" \
@@ -136,7 +210,7 @@ else
     log "Peer created"
 
     # Find the new peer ID
-    PEER_ID=$(curl -fsS -m 10 -H "${AUTH_HEADER}" "${API_URL}/api/client" 2>/dev/null \
+    PEER_ID=$(curl -fsS -m 10 -b "${COOKIE_FILE}" "${API_URL}/api/client" 2>/dev/null \
         | python3 -c "
 import sys, json
 try:
@@ -163,7 +237,7 @@ log "Downloading configuration for peer ${PEER_ID}..."
 mkdir -p /etc/wireguard
 chmod 700 /etc/wireguard
 
-if ! curl -fsS -m 10 -H "${AUTH_HEADER}" \
+if ! curl -fsS -m 10 -b "${COOKIE_FILE}" \
         "${API_URL}/api/client/${PEER_ID}/configuration" \
         -o "${WG_CONF}"; then
     fail "Failed to download peer configuration" 4
@@ -175,8 +249,17 @@ log "Configuration saved to ${WG_CONF}"
 # 7. Bring up the interface
 # ============================================================================
 log "Bringing up ${WG_INTERFACE}..."
-if ! wg-quick up "${WG_INTERFACE}"; then
-    fail "wg-quick up failed" 5
+# wg-quick doesn't handle an already-existing interface cleanly. Use
+# syncconf to update the running interface if it exists, or up to create.
+if ip link show "${WG_INTERFACE}" >/dev/null 2>&1; then
+    log "${WG_INTERFACE} already exists, syncing configuration"
+    if ! wg syncconf "${WG_INTERFACE}" <(wg-quick strip "${WG_INTERFACE}"); then
+        log "syncconf failed, falling back to down/up"
+        wg-quick down "${WG_INTERFACE}" 2>/dev/null || true
+        wg-quick up "${WG_INTERFACE}" || fail "wg-quick up failed" 5
+    fi
+else
+    wg-quick up "${WG_INTERFACE}" || fail "wg-quick up failed" 5
 fi
 log "${WG_INTERFACE} is up"
 
@@ -215,5 +298,8 @@ log "  Peer:      ${PEER_NAME}"
 log "  Peer ID:   ${PEER_ID}"
 log "  Endpoint:  ${API_URL}"
 log "  Interface: ${WG_INTERFACE} (${ASSIGNED_IP:-no IP})"
+
+# Clean up session cookie — it contains a long-lived auth token.
+rm -f "${COOKIE_FILE}"
 
 exit 0
