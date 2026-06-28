@@ -53,6 +53,15 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
           PPSA_SKIP_BOOTSTRAP: ${{ steps.cache-rootfs.outputs.cache-hit == 'true' && '1' || '' }}
+          # PPSA WireGuard auto-registration (optional). Set as repo secrets.
+          # PPSA_WG_API_URL  - full wg-easy URL, e.g. http://wg.example.com:51831
+          # PPSA_WG_API_USER - wg-easy admin username
+          # PPSA_WG_API_PASS - wg-easy admin password
+          # PPSA_WG_PEER_NAME - optional, defaults to 'ppsa-server'
+          PPSA_WG_API_URL: ${{ secrets.PPSA_WG_API_URL }}
+          PPSA_WG_API_USER: ${{ secrets.PPSA_WG_API_USER }}
+          PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}
+          PPSA_WG_PEER_NAME: ${{ secrets.PPSA_WG_PEER_NAME }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           sudo bash scripts/build-live-usb.sh \
@@ -126,6 +135,10 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
           PPSA_SKIP_BOOTSTRAP: ${{ steps.cache-rootfs-vbox.outputs.cache-hit == 'true' && '1' || '' }}
+          PPSA_WG_API_URL: ${{ secrets.PPSA_WG_API_URL }}
+          PPSA_WG_API_USER: ${{ secrets.PPSA_WG_API_USER }}
+          PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}
+          PPSA_WG_PEER_NAME: ${{ secrets.PPSA_WG_PEER_NAME }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           sudo bash scripts/build-live-usb.sh \
