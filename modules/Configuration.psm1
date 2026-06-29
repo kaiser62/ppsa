@@ -17,7 +17,7 @@ function Get-Configuration {
         throw "Failed to parse configuration file '$Path': $_"
     }
 
-    $required = @("output", "wsl", "github", "virtualbox", "logging", "build")
+    $required = @("output", "wsl", "github", "virtualbox", "logging", "build", "smoke_test")
     $missing = @()
     foreach ($section in $required) {
         if (-not $config.$section) { $missing += $section }
