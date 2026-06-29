@@ -86,6 +86,7 @@ services:
       - ../backups:/backups:ro
       - ../.env:/opt/ppsa/.env:ro  # ponytail: webui reads this for /api/env (Config tab)
       - /:/host:ro  # ponytail: webui needs access to host's nmcli/wpa_supplicant for Wi-Fi scan
+      - /etc/ppsa:/etc/ppsa:rw  # ponytail: override /:/host:ro for this dir so iptables-save persists across reboots. Docker's most-specific-path resolution makes this rw.
     cap_add:
       - NET_ADMIN
     environment:
