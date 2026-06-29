@@ -221,17 +221,37 @@ def _run_docker(cmd: list[str]) -> str:
 # ---------------------------------------------------------------------------
 # Palworld REST API proxy
 # ---------------------------------------------------------------------------
-async def palworld_get(path: str):
-    """Proxy GET requests to the Palworld REST API."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{PALWORLD_API_URL}/v1/api{path}",
-            auth=("admin", PALWORLD_PASSWORD),
-            timeout=5,
-        )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=resp.status_code, detail=resp.text)
-        return resp.json()
+_RAISE = object()
+
+async def palworld_get(path: str, default=_RAISE):
+    """Proxy GET requests to the Palworld REST API.
+
+    Default behavior (no `default` arg): raises on any failure — both
+    non-200 responses and connection/timeout errors. This matches the
+    pre-existing contract that /api/dashboard and other call sites already
+    rely on (they wrap in try/except and degrade themselves).
+
+    Opt-in behavior: pass `default=` to suppress connection errors and
+    return the default value instead of raising. Use this in callers that
+    want to silently render an empty state on transient upstream failures
+    rather than catch the exception themselves.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{PALWORLD_API_URL}/v1/api{path}",
+                auth=("admin", PALWORLD_PASSWORD),
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail=resp.text)
+            return resp.json()
+    except HTTPException:
+        raise
+    except Exception:
+        if default is _RAISE:
+            raise
+        return default
 
 async def palworld_post(path: str, body: dict = None):
     """Proxy POST requests to the Palworld REST API."""
@@ -472,7 +492,13 @@ async def restart_palworld(_user: str = Depends(require_auth)):
 # ---------------------------------------------------------------------------
 @app.get("/api/players")
 async def get_players(_user: str = Depends(require_auth)):
-    return await palworld_get("/players")
+    """Return current player list. Returns {"players": [], "error": "..."} on
+    transient upstream failure so the UI can show "No players online" instead
+    of an HTTP 500 + plain-text body."""
+    try:
+        return await palworld_get("/players")
+    except Exception as e:
+        return {"players": [], "error": str(e)}
 
 @app.post("/api/players/kick")
 async def kick_player(userid: str, reason: str = "Kicked by admin", _user: str = Depends(require_auth)):
@@ -895,28 +921,25 @@ def _fw_write_config(cfg: dict) -> tuple[int, str, str]:
 
 @app.get("/api/firewall/config")
 async def get_firewall_config(_user: str = Depends(require_auth)):
-    """Read the current firewall config. Source: webui container's data dir (most recent write)."""
-    # Read from the webui container's writable data dir (most recent user change)
-    container_path = Path(FIREWALL_CONFIG_CONTAINER)
-    if container_path.exists():
+    """Read the current firewall config.
+
+    Source priority matches scripts/ppsa-firewall-apply.sh:
+      1. /etc/ppsa/firewall.json (canonical, root-owned) — the webui
+         container has /etc/ppsa:/etc/ppsa:rw so we read it directly.
+      2. /app/data/firewall.json (webui volume, written by saveFirewall)
+      3. DEFAULT_FIREWALL_CONFIG
+    """
+    for path in (Path(FIREWALL_CONFIG_HOST), Path(FIREWALL_CONFIG_CONTAINER)):
+        if not path.exists():
+            continue
         try:
-            cfg = json.loads(container_path.read_text())
-            merged = dict(DEFAULT_FIREWALL_CONFIG)
-            merged.update({k: v for k, v in cfg.items() if v is not None})
-            return merged
+            cfg = json.loads(path.read_text())
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=500, detail=f"invalid firewall config: {e}")
-    # Fall back to the host copy
-    rc, out, err = _host_exec(f"cat {shlex.quote(FIREWALL_CONFIG_HOST)} 2>/dev/null")
-    if rc != 0 and not out.strip():
-        return DEFAULT_FIREWALL_CONFIG
-    try:
-        cfg = json.loads(out)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"invalid firewall config: {e}")
-    merged = dict(DEFAULT_FIREWALL_CONFIG)
-    merged.update({k: v for k, v in cfg.items() if v is not None})
-    return merged
+            raise HTTPException(status_code=500, detail=f"invalid firewall config in {path}: {e}")
+        merged = dict(DEFAULT_FIREWALL_CONFIG)
+        merged.update({k: v for k, v in cfg.items() if v is not None})
+        return merged
+    return DEFAULT_FIREWALL_CONFIG
 
 @app.put("/api/firewall/config")
 async def update_firewall_config(cfg: FirewallConfig, _user: str = Depends(require_auth)):
@@ -938,13 +961,46 @@ async def update_firewall_config(cfg: FirewallConfig, _user: str = Depends(requi
 
 @app.get("/api/firewall/status")
 async def get_firewall_status(_user: str = Depends(require_auth)):
-    """Show current iptables WG_FRIENDS chain + the INPUT jump that feeds it."""
-    # The fallback message MUST NOT contain "WG_FRIENDS" — otherwise the
-    # substring check below would always be true even when the chain is
-    # missing. Check for the actual iptables-save chain header marker
-    # (":WG_FRIENDS - [0:0]") instead.
-    rc, out, err = _host_exec("iptables-save 2>/dev/null | grep -E 'WG_FRIENDS' || echo '(no chain)'")
-    return {"rules": out, "chain_present": ":WG_FRIENDS" in out}
+    """Show current WG_FRIENDS iptables chain rules + presence flag.
+
+    The webui container can't run iptables -S WG_FRIENDS directly: it lacks
+    CAP_SYS_ADMIN (so nsenter into PID 1's netns fails) and chrooting into
+    /host runs the host's iptables binary but in the container's netns, where
+    the chain doesn't exist. The apply script writes a full iptables-save to
+    /etc/ppsa/iptables.rules.v4 on every run, so we parse that file. Stale
+    only if the chain is edited by something other than the apply script.
+    """
+    rules_text = ""
+    for path in (
+        Path("/etc/ppsa/iptables.rules.v4"),
+        Path("/etc/iptables/rules.v4"),
+        Path("/host/etc/ppsa/iptables.rules.v4"),
+        Path("/host/etc/iptables/rules.v4"),
+    ):
+        if not path.exists():
+            continue
+        try:
+            in_chain = False
+            lines = []
+            for line in path.read_text().splitlines():
+                if line.startswith(":WG_FRIENDS "):
+                    in_chain = True
+                    continue
+                if line.startswith("COMMIT"):
+                    if in_chain:
+                        break
+                    continue
+                if in_chain and line.startswith("-A WG_FRIENDS"):
+                    lines.append(line)
+            if lines:
+                rules_text = "\n".join(lines)
+                break
+        except Exception:
+            continue
+    return {
+        "rules": rules_text or "(chain not installed)",
+        "chain_present": bool(rules_text),
+    }
 
 @app.post("/api/firewall/apply")
 async def firewall_apply(_user: str = Depends(require_auth)):

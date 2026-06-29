@@ -25,5 +25,7 @@ Thumbs.db
 
 # Git
 *.orig
-ppsa-*.png
+*.png
 .playwright-mcp/
+.vagrant-mcp/
+backups/
