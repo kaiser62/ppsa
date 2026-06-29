@@ -183,16 +183,6 @@ sudo /opt/ppsa/scripts/ppsa-wireguard-register.sh
 # tail the log: /var/log/ppsa-install.log
 ```
 
-## Player onboarding
-
-1. Share `http://pleaseee.eu.org:51831` (player logs in with the wg-easy password)
-2. Player creates (or admin creates) a peer in the wg-easy UI
-3. Player downloads the `.conf`, imports it into the WireGuard client
-4. In Palworld, connect to `10.8.0.3:8211`
-
-No port forwarding on the player's network is required — they only need an
-outbound `51830/udp` connection to `pleaseee.eu.org`.
-
 ## Test results (v1.1.3)
 
 - Built v1.1.3 with `PPSA_WG_*` secrets, booted in VM `ppsa-v113` (192.168.1.143)
@@ -204,3 +194,54 @@ outbound `51830/udp` connection to `pleaseee.eu.org`.
 - Handshake active 14s after `up`, ~2 KiB transferred (handshake + keepalives + DNS)
 - DNS via `/etc/hosts` entry + `1.1.1.1` fallback
 - tty1 progress UI shows `WireGuard: 10.8.0.3` on completion screen
+
+## End-to-end test results (v1.1.5)
+
+### Test environment
+
+| Component | Value |
+|-----------|-------|
+| PPSA host VM | `ppsa-v113` (192.168.1.143, wg0 = 10.8.0.3) |
+| Player VM   | `ppsa-v114` (192.168.1.197, wg0 = 10.8.0.4) |
+| wg-easy     | v15, homeserver 192.168.1.140, subnet 10.8.0.0/24 |
+| Public IP   | pleaseee.eu.org → 118.179.74.23 |
+| Router forwarding | UDP 51830, TCP 51831 → 192.168.1.140 |
+
+### Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| ppsa-v113 → wg-easy (10.8.0.1) | 3/3 pings, ~2.8 ms | |
+| ppsa-v114 → ppsa-v113 (10.8.0.3) | 3/3 pings, ~3.1 ms, TTL=63 | TTL drop from 64 = inside WG tunnel |
+| Handshake via public IP | Fresh on both VMs | `wg show` shows `endpoint: 118.179.74.23:51830` |
+| DNS resolution of `pleaseee.eu.org` | OK | Static `/etc/hosts` + `1.1.1.1` in resolv.conf |
+
+### Key findings
+
+- **Public endpoint works.** wg0.conf bakes `Endpoint = pleaseee.eu.org:51830`; the homeserver is reachable through the router's UDP 51830 forward.
+- **TTL=63 confirms tunneling.** One hop more than the LAN baseline (64 → 63) is the expected WireGuard UDP encapsulation.
+- **DNS is self-contained.** PPSA ships a static `/etc/hosts` entry plus `nameserver 1.1.1.1` in resolv.conf — no systemd-resolved dependency.
+
+### Baked-in credentials (CI flow)
+
+`PPSA_WG_*` secrets are consumed by `scripts/build-live-usb.sh` (and
+`.github/workflows/build-release.yml`) at build time and written into
+`/etc/ppsa/wireguard.json` (chmod 600). v1.1.5 ships with the credentials
+pre-baked — install.sh step 6 just runs the registration on first boot
+with no prompts.
+
+### Limitations
+
+- **Public access requires router port forwarding** on the homeserver network (UDP 51830, TCP 51831). LAN-only testing works without it.
+- **Single baked-in endpoint.** The wg-easy URL is fixed at build time; repointing to a different instance needs a rebuild or manual edit of `/etc/ppsa/wireguard.json`.
+
+## Player onboarding (final)
+
+The 4-step flow under this section was verified working with the v1.1.5 public endpoint:
+
+1. Player opens `http://pleaseee.eu.org:51831` and logs in with the wg-easy admin password.
+2. Admin creates a new peer in the UI. Player downloads the `.conf` and imports it into the WireGuard client.
+3. Player's WG IP is `10.8.0.4+` (assigned by wg-easy).
+4. In Palworld, connect to `10.8.0.3:8211` (the PPSA host's WG IP).
+
+> The PPSA server peer (`ppsa-server` is the default peer name baked in) is already pre-registered by the image build, so onboarding only creates the player's peer. No port forwarding on the player's network — only outbound UDP/51830 to pleaseee.eu.org.

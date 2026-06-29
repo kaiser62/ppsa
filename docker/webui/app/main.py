@@ -847,6 +847,104 @@ async def wifi_hotspot_start(_user: str = Depends(require_auth)):
 
 
 # ---------------------------------------------------------------------------
+# Firewall management (WG_FRIENDS chain on the host, runs via _host_exec)
+# ---------------------------------------------------------------------------
+FIREWALL_CONFIG_HOST = "/etc/ppsa/firewall.json"
+FIREWALL_APPLY_SCRIPT = "/opt/ppsa/scripts/ppsa-firewall-apply.sh"
+
+DEFAULT_FIREWALL_CONFIG = {
+    "wg_friends_allowed_tcp": [22, 80, 443, 8080, 10086, 25575],
+    "wg_friends_allowed_udp": [8211, 27015],
+    "wg_friends_allow_icmp": True,
+}
+
+class FirewallConfig(BaseModel):
+    wg_friends_allowed_tcp: list[int] = []
+    wg_friends_allowed_udp: list[int] = []
+    wg_friends_allow_icmp: bool = True
+
+def _fw_validate_ports(ports: list[int], proto: str) -> list[int]:
+    """Filter to 1-65535, dedupe, sort. Reject obviously bad input."""
+    out = []
+    seen = set()
+    for p in ports:
+        if not isinstance(p, int) or not (0 < p < 65536):
+            raise HTTPException(status_code=400, detail=f"invalid {proto} port: {p!r}")
+        if p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return sorted(out)
+
+def _fw_write_config(cfg: dict) -> tuple[int, str, str]:
+    """Write firewall config to host as JSON. Uses base64 to avoid shell escaping."""
+    import base64
+    payload = base64.b64encode(json.dumps(cfg, indent=2).encode()).decode()
+    cmd = (
+        f"mkdir -p /etc/ppsa && echo {shlex.quote(payload)} | base64 -d > {shlex.quote(FIREWALL_CONFIG_HOST)}"
+    )
+    return _host_exec(cmd)
+
+@app.get("/api/firewall/config")
+async def get_firewall_config(_user: str = Depends(require_auth)):
+    """Read the current firewall config from the host. Falls back to defaults if missing/invalid."""
+    rc, out, err = _host_exec(f"cat {shlex.quote(FIREWALL_CONFIG_HOST)} 2>/dev/null")
+    if rc != 0 and not out.strip():
+        return DEFAULT_FIREWALL_CONFIG
+    try:
+        cfg = json.loads(out)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"invalid firewall config: {e}")
+    # Merge with defaults so missing keys don't break the UI
+    merged = dict(DEFAULT_FIREWALL_CONFIG)
+    merged.update({k: v for k, v in cfg.items() if v is not None})
+    return merged
+
+@app.put("/api/firewall/config")
+async def update_firewall_config(cfg: FirewallConfig, _user: str = Depends(require_auth)):
+    """Validate, write config, run apply script."""
+    tcp = _fw_validate_ports(cfg.wg_friends_allowed_tcp, "tcp")
+    udp = _fw_validate_ports(cfg.wg_friends_allowed_udp, "udp")
+    new_cfg = {
+        "wg_friends_allowed_tcp": tcp,
+        "wg_friends_allowed_udp": udp,
+        "wg_friends_allow_icmp": bool(cfg.wg_friends_allow_icmp),
+    }
+    rc, out, err = _fw_write_config(new_cfg)
+    if rc != 0:
+        raise HTTPException(status_code=500, detail=f"write config failed: {err or out}")
+    rc2, out2, err2 = _host_exec(f"bash {shlex.quote(FIREWALL_APPLY_SCRIPT)}")
+    if rc2 != 0:
+        raise HTTPException(status_code=500, detail=f"apply failed: {err2 or out2}")
+    return {"status": "ok", "config": new_cfg, "detail": out2}
+
+@app.get("/api/firewall/status")
+async def get_firewall_status(_user: str = Depends(require_auth)):
+    """Show current iptables WG_FRIENDS chain + the INPUT jump that feeds it."""
+    rc, out, err = _host_exec("iptables-save 2>/dev/null | grep -E '(WG_FRIENDS|^-A INPUT.*WG_FRIENDS)' || echo '(WG_FRIENDS chain not configured)'")
+    return {"rules": out, "chain_present": "WG_FRIENDS" in out}
+
+@app.post("/api/firewall/apply")
+async def firewall_apply(_user: str = Depends(require_auth)):
+    """Re-run the apply script (use after manually editing firewall.json on the host)."""
+    rc, out, err = _host_exec(f"bash {shlex.quote(FIREWALL_APPLY_SCRIPT)}")
+    if rc != 0:
+        raise HTTPException(status_code=500, detail=f"apply failed: {err or out}")
+    return {"status": "ok", "detail": out}
+
+@app.post("/api/firewall/reset")
+async def firewall_reset(_user: str = Depends(require_auth)):
+    """Restore the default allowed ports and re-apply."""
+    rc, out, err = _fw_write_config(DEFAULT_FIREWALL_CONFIG)
+    if rc != 0:
+        raise HTTPException(status_code=500, detail=f"write config failed: {err or out}")
+    rc2, out2, err2 = _host_exec(f"bash {shlex.quote(FIREWALL_APPLY_SCRIPT)}")
+    if rc2 != 0:
+        raise HTTPException(status_code=500, detail=f"apply failed: {err2 or out2}")
+    return {"status": "ok", "config": DEFAULT_FIREWALL_CONFIG, "detail": out2}
+
+
+# ---------------------------------------------------------------------------
 # Serve static frontend
 # ---------------------------------------------------------------------------
 FRONTEND_DIR = Path(__file__).parent / "static"

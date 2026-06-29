@@ -206,6 +206,15 @@ ufw allow 51830/udp  # WireGuard tunnel (PPSA gaming)
 ufw allow 27015/udp  # Steam query
 ufw allow 8212/tcp   # Palworld REST API
 
+# Deploy the WG_FRIENDS chain (manageable from the WebUI). Non-fatal: the
+# WebUI can re-apply later, and the host may not have WireGuard up yet.
+if [ -f "$PPSA_DIR/scripts/ppsa-firewall-apply.sh" ]; then
+  chmod +x "$PPSA_DIR/scripts/ppsa-firewall-apply.sh"
+  "$PPSA_DIR/scripts/ppsa-firewall-apply.sh" || echo "  ppsa-firewall-apply failed (rc=$?) — can be re-run from WebUI"
+else
+  echo "  ppsa-firewall-apply.sh not found, skipping WG_FRIENDS setup"
+fi
+
 # --- Step 7: Mark complete ---
 mark_step 8
 echo "[8/8] Marking installation complete..."

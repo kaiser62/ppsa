@@ -187,6 +187,7 @@
         <button onclick="showPage('system',event)">System</button>
         <button onclick="showPage('backup',event)">Backup</button>
         <button onclick="showPage('wifi',event)">Wi-Fi</button>
+        <button onclick="showPage('firewall',event)">Firewall</button>
         <button onclick="showPage('wireguard',event)">WireGuard</button>
         <button onclick="showPage('settings',event)">Settings</button>
       </div>
@@ -363,6 +364,48 @@
       </div>
     </div>
 
+    <!-- Firewall -->
+    <div id="page-firewall" class="page">
+      <div id="fw-alert" class="alert"></div>
+      <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:1rem">
+        Control which ports friends connected via WireGuard (10.8.0.0/24) can reach on this PPSA host.
+        All other traffic from the WG friends network is dropped by the <code>WG_FRIENDS</code> iptables chain.
+      </p>
+
+      <div class="section">
+        <h2>Allowed Ports (WireGuard Friends)</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>TCP ports (comma-separated, 1-65535)</label>
+            <input id="fw-tcp" placeholder="22, 80, 443, 8080, 10086, 25575">
+          </div>
+          <div class="form-group">
+            <label>UDP ports (comma-separated, 1-65535)</label>
+            <input id="fw-udp" placeholder="8211, 27015">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:0.4rem;color:var(--text);font-size:0.875rem">
+              <input type="checkbox" id="fw-icmp" style="width:auto"> Allow ICMP (ping)
+            </label>
+          </div>
+        </div>
+        <div class="btn-group">
+          <button onclick="saveFirewall()">Save &amp; Apply</button>
+          <button class="outline" onclick="applyFirewall()">Apply (re-read config)</button>
+          <button class="outline danger" onclick="resetFirewall()">Reset to Defaults</button>
+          <button class="outline small" onclick="refreshFirewall()">Refresh</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Current iptables Rules (WG_FRIENDS chain)</h2>
+        <textarea id="fw-rules" class="config-editor" style="min-height:180px" readonly>Loading...</textarea>
+        <div class="sub" id="fw-status-text" style="margin-top:0.5rem"></div>
+      </div>
+    </div>
+
     <!-- WireGuard -->
     <div id="page-wireguard" class="page">
       <div id="wg-alert" class="alert"></div>
@@ -518,6 +561,7 @@ function showPage(name, ev) {
   if (name === 'backup') refreshBackup();
   if (name === 'wireguard') wgStatus();
   if (name === 'wifi') wifiScan();
+  if (name === 'firewall') refreshFirewall();
 }
 
 // --- Dashboard ---
@@ -841,6 +885,69 @@ async function wifiHotspotStart() {
     alert('PPSA-Setup hotspot started. Connect your phone to "PPSA-Setup" and visit http://192.168.50.1/');
   } catch (err) {
     alert('Failed: ' + err.message);
+  }
+}
+
+// --- Firewall ---
+function parsePorts(s) {
+  return s.split(/[,\s]+/).map(x => x.trim()).filter(x => /^\d{1,5}$/.test(x)).map(Number).filter(n => n > 0 && n < 65536);
+}
+
+async function refreshFirewall() {
+  try {
+    const [cfg, status] = await Promise.all([
+      api('/api/firewall/config'),
+      api('/api/firewall/status')
+    ]);
+    document.getElementById('fw-tcp').value = (cfg.wg_friends_allowed_tcp || []).join(', ');
+    document.getElementById('fw-udp').value = (cfg.wg_friends_allowed_udp || []).join(', ');
+    document.getElementById('fw-icmp').checked = !!cfg.wg_friends_allow_icmp;
+    document.getElementById('fw-rules').value = status.rules || '(no rules)';
+    const stEl = document.getElementById('fw-status-text');
+    stEl.textContent = status.chain_present ? 'Chain is active on the host.' : 'Chain not present — click "Apply" to install rules.';
+    stEl.className = 'sub ' + (status.chain_present ? 'status-ok' : 'status-warn');
+  } catch(e) {
+    console.error('Firewall:', e);
+    showAlert('Error loading firewall: ' + e.message, 'error', 'fw-alert');
+  }
+}
+
+async function saveFirewall() {
+  const body = {
+    wg_friends_allowed_tcp: parsePorts(document.getElementById('fw-tcp').value),
+    wg_friends_allowed_udp: parsePorts(document.getElementById('fw-udp').value),
+    wg_friends_allow_icmp: document.getElementById('fw-icmp').checked,
+  };
+  try {
+    const data = await api('/api/firewall/config', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    showAlert('Firewall updated: ' + (data.detail || 'ok'), 'success', 'fw-alert');
+    setTimeout(refreshFirewall, 500);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'fw-alert');
+  }
+}
+
+async function applyFirewall() {
+  try {
+    const data = await api('/api/firewall/apply', { method: 'POST' });
+    showAlert('Re-applied from config: ' + (data.detail || 'ok'), 'success', 'fw-alert');
+    setTimeout(refreshFirewall, 500);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'fw-alert');
+  }
+}
+
+async function resetFirewall() {
+  if (!confirm('Reset firewall to the default allowed ports?\n\nTCP: 22, 80, 443, 8080, 10086, 25575\nUDP: 8211, 27015\nICMP: on')) return;
+  try {
+    const data = await api('/api/firewall/reset', { method: 'POST' });
+    showAlert('Reset to defaults: ' + (data.detail || 'ok'), 'success', 'fw-alert');
+    setTimeout(refreshFirewall, 500);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'fw-alert');
   }
 }
 
