@@ -206,6 +206,17 @@ ufw allow 51830/udp  # WireGuard tunnel (PPSA gaming)
 ufw allow 27015/udp  # Steam query
 ufw allow 8212/tcp   # Palworld REST API
 
+# Install ppsa-firewall-restore.service so the WG_FRIENDS chain survives
+# reboots. ppsa-firewall-apply.sh writes its rules to /etc/ppsa/ (because
+# /etc/iptables is RO when called from the webui chroot); this service
+# iptables-restore's them at boot.
+if [ -f "$PPSA_DIR/scripts/ppsa-firewall-restore.service" ]; then
+  cp "$PPSA_DIR/scripts/ppsa-firewall-restore.service" /etc/systemd/system/ppsa-firewall-restore.service
+  systemctl daemon-reload
+  systemctl enable ppsa-firewall-restore.service
+  echo "  ppsa-firewall-restore.service: installed and enabled"
+fi
+
 # Deploy the WG_FRIENDS chain (manageable from the WebUI). Non-fatal: the
 # WebUI can re-apply later, and the host may not have WireGuard up yet.
 if [ -f "$PPSA_DIR/scripts/ppsa-firewall-apply.sh" ]; then

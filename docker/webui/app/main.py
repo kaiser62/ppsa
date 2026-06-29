@@ -939,8 +939,12 @@ async def update_firewall_config(cfg: FirewallConfig, _user: str = Depends(requi
 @app.get("/api/firewall/status")
 async def get_firewall_status(_user: str = Depends(require_auth)):
     """Show current iptables WG_FRIENDS chain + the INPUT jump that feeds it."""
-    rc, out, err = _host_exec("iptables-save 2>/dev/null | grep -E '(WG_FRIENDS|^-A INPUT.*WG_FRIENDS)' || echo '(WG_FRIENDS chain not configured)'")
-    return {"rules": out, "chain_present": "WG_FRIENDS" in out}
+    # The fallback message MUST NOT contain "WG_FRIENDS" — otherwise the
+    # substring check below would always be true even when the chain is
+    # missing. Check for the actual iptables-save chain header marker
+    # (":WG_FRIENDS - [0:0]") instead.
+    rc, out, err = _host_exec("iptables-save 2>/dev/null | grep -E 'WG_FRIENDS' || echo '(no chain)'")
+    return {"rules": out, "chain_present": ":WG_FRIENDS" in out}
 
 @app.post("/api/firewall/apply")
 async def firewall_apply(_user: str = Depends(require_auth)):

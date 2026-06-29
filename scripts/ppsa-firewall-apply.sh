@@ -110,17 +110,23 @@ if ! iptables -C INPUT -s "$WG_NET" -j "$CHAIN" 2>/dev/null; then
   iptables -I INPUT 1 -s "$WG_NET" -j "$CHAIN"
 fi
 
-# --- Persist rules (best-effort, may be read-only when called from webui) ---
+# --- Persist rules ---
+# Try multiple locations in order of preference. The /etc/ppsa path is
+# special-cased because we have a systemd service (ppsa-firewall-restore)
+# that restores from there at boot. When called from the WebUI chroot
+# /etc/iptables is read-only, so /etc/ppsa/ is the real persistent home.
 if command -v netfilter-persistent >/dev/null 2>&1; then
   netfilter-persistent save >/dev/null 2>&1
 elif command -v iptables-save >/dev/null 2>&1; then
-  # Try /etc/iptables/rules.v4 (canonical, but may be RO in chroot).
-  # Fall back to webui data dir which is always writable.
-  if iptables-save > "$RULES_V4" 2>/dev/null; then
-    :
+  mkdir -p /etc/iptables 2>/dev/null || true
+  mkdir -p /etc/ppsa 2>/dev/null || true
+  # Try canonical first, then /etc/ppsa (writable in our setup)
+  if iptables-save > /etc/iptables/rules.v4 2>/dev/null; then
+    : # canonical path works
+  elif iptables-save > /etc/ppsa/iptables.rules.v4 2>/dev/null; then
+    : # /etc/ppsa is writable, use it as fallback
   else
-    # Save to webui data dir as backup
-    iptables-save > "$WEBDATA/iptables.rules.v4" 2>/dev/null || true
+    : # couldn't write anywhere
   fi
 fi
 

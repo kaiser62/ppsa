@@ -1,0 +1,25 @@
+[Unit]
+Description=PPSA - Restore WG_FRIENDS iptables rules at boot
+Documentation=https://github.com/kaiser62/ppsa
+# Restore after the network is up so the WG subnet (10.8.0.0/24) referenced
+# in the chain actually exists, and after docker so any compose-managed
+# iptables work is settled.
+After=network-online.target docker.service
+Wants=network-online.target
+# Only run if we actually have a saved ruleset in /etc/ppsa/. This makes
+# the service a no-op on fresh installs where the apply script has not
+# yet been run.
+ConditionPathExists=/etc/ppsa/iptables.rules.v4
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Try canonical first, then /etc/ppsa. Both locations are written by
+# ppsa-firewall-apply.sh; we accept either at restore time so a manual
+# `iptables-save > /etc/iptables/rules.v4` from the host shell still
+# takes effect.
+ExecStart=/bin/sh -c 'if [ -f /etc/iptables/rules.v4 ]; then iptables-restore < /etc/iptables/rules.v4; elif [ -f /etc/ppsa/iptables.rules.v4 ]; then iptables-restore < /etc/ppsa/iptables.rules.v4; fi'
+User=root
+
+[Install]
+WantedBy=multi-user.target
