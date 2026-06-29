@@ -190,6 +190,19 @@ else
     echo "  ppsa-wireguard-register.sh not found, skipping"
 fi
 
+# Install + enable the systemd unit so re-registration (after power outage,
+# or after the user fills in /etc/ppsa/wireguard.json via the WebUI) can be
+# triggered via `systemctl start ppsa-wireguard-register.service`. Conditional
+# on the .service file being present in the repo (it ships as of v1.1.10+).
+if [ -f "$PPSA_DIR/scripts/ppsa-wireguard-register.service" ]; then
+    cp "$PPSA_DIR/scripts/ppsa-wireguard-register.service" /etc/systemd/system/ppsa-wireguard-register.service
+    systemctl daemon-reload
+    systemctl enable ppsa-wireguard-register.service
+    echo "  ppsa-wireguard-register.service: installed and enabled"
+else
+    echo "  ppsa-wireguard-register.service not found at $PPSA_DIR/scripts/, skipping"
+fi
+
 # --- Step 6: Firewall ---
 mark_step 7
 echo "[7/8] Configuring firewall..."

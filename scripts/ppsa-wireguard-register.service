@@ -1,0 +1,41 @@
+# =============================================================================
+# ppsa-wireguard-register.service
+# =============================================================================
+# Auto-registers this PPSA host as a peer in the PPSA WireGuard gaming network.
+#
+# Reads credentials from /etc/ppsa/wireguard.json and calls the wg-easy API
+# to create (or refresh) a peer entry, download the .conf, and bring up
+# the wg0 interface via wg-quick.
+#
+# Idempotent: if the peer already exists, it reuses the existing ID and
+# just refreshes the configuration. Safe to run on every boot.
+#
+# Depends on /etc/ppsa/wireguard.json (created at build time by
+# build-live-usb.sh or filled in by the user via the WebUI). If the file
+# is missing or has empty creds, the script exits 1 and the service is
+# reported as failed; the user can then add creds and run:
+#     systemctl start ppsa-wireguard-register.service
+# =============================================================================
+
+[Unit]
+Description=PPSA WireGuard Auto-Registration (register host as wg-easy peer)
+Documentation=https://github.com/kaiser62/ppsa
+# Need network-online so we can reach the wg-easy API; the script itself
+# doesn't bind to any port.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/ppsa/scripts/ppsa-wireguard-register.sh
+# Script can take 30-60s on a cold network (wg-quick handshake etc.).
+# Allow headroom for slow DNS or first-time wg-easy login.
+TimeoutStartSec=120s
+# Restart on transient network failures (wg-easy host temporarily down,
+# DNS hiccup, DHCP race). 60s backoff avoids tight retry loops.
+Restart=on-failure
+RestartSec=60s
+
+[Install]
+WantedBy=multi-user.target

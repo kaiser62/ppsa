@@ -254,15 +254,26 @@ else
     echo "WARNING: ppsa-wifi-onboard.sh not found, skipping"
 fi
 
-# PPSA WireGuard auto-registration: install register script + bake config.
-# The register script is run by install.sh on first boot. The config file
-# /etc/ppsa/wireguard.json contains the wg-easy API endpoint and credentials
-# so the host can self-register as a peer in the PPSA gaming network.
+# PPSA WireGuard auto-registration: install register script + service + bake config.
+# The register script is run by install.sh on first boot, and a systemd
+# service is enabled so re-registration (e.g. after power outage, or
+# after the user fills in /etc/ppsa/wireguard.json via the WebUI) can be
+# triggered via `systemctl start ppsa-wireguard-register.service`.
+# The config file /etc/ppsa/wireguard.json contains the wg-easy API
+# endpoint and credentials so the host can self-register as a peer in
+# the PPSA gaming network.
 if [ -f /opt/ppsa/scripts/ppsa-wireguard-register.sh ]; then
     chmod +x /opt/ppsa/scripts/ppsa-wireguard-register.sh
     echo "PPSA WireGuard register: script installed"
 else
     echo "WARNING: ppsa-wireguard-register.sh not found, skipping"
+fi
+if [ -f /opt/ppsa/scripts/ppsa-wireguard-register.service ]; then
+    cp /opt/ppsa/scripts/ppsa-wireguard-register.service /etc/systemd/system/ppsa-wireguard-register.service
+    systemctl enable ppsa-wireguard-register.service
+    echo "PPSA WireGuard register: service installed and enabled"
+else
+    echo "WARNING: ppsa-wireguard-register.service not found, skipping"
 fi
 
 # Write the wireguard.json config (baked into the image).
