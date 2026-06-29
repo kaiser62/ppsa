@@ -6,10 +6,14 @@ Documentation=https://github.com/kaiser62/ppsa
 # iptables work is settled.
 After=network-online.target docker.service
 Wants=network-online.target
-# Only run if we actually have a saved ruleset in /etc/ppsa/. This makes
-# the service a no-op on fresh installs where the apply script has not
-# yet been run.
-ConditionPathExists=/etc/ppsa/iptables.rules.v4
+# Only run if we actually have a saved ruleset in either location:
+#   - /etc/iptables/rules.v4 (canonical, written by `iptables-save`)
+#   - /etc/ppsa/iptables.rules.v4 (fallback, written when /etc/iptables is RO)
+# systemd's `|` separator gives OR semantics across multiple condition lines.
+# This makes the service a no-op on fresh installs where the apply script
+# has not yet been run.
+ConditionPathExists=|/etc/iptables/rules.v4
+ConditionPathExists=|/etc/ppsa/iptables.rules.v4
 
 [Service]
 Type=oneshot

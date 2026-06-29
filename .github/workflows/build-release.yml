@@ -58,10 +58,12 @@ jobs:
           # PPSA_WG_API_USER - wg-easy admin username
           # PPSA_WG_API_PASS - wg-easy admin password
           # PPSA_WG_PEER_NAME - optional, defaults to 'ppsa-server'
+          # PPSA_WG_PREFERRED_IP - optional, e.g. 10.8.0.2 (wg-easy v15 may ignore)
           PPSA_WG_API_URL: ${{ secrets.PPSA_WG_API_URL }}
           PPSA_WG_API_USER: ${{ secrets.PPSA_WG_API_USER }}
           PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}
           PPSA_WG_PEER_NAME: ${{ secrets.PPSA_WG_PEER_NAME }}
+          PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           sudo bash scripts/build-live-usb.sh \
@@ -139,6 +141,7 @@ jobs:
           PPSA_WG_API_USER: ${{ secrets.PPSA_WG_API_USER }}
           PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}
           PPSA_WG_PEER_NAME: ${{ secrets.PPSA_WG_PEER_NAME }}
+          PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           sudo bash scripts/build-live-usb.sh \

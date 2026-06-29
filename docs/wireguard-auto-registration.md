@@ -77,6 +77,7 @@ GitHub Actions secrets — see `.github/workflows/build-release.yml`):
 | `PPSA_WG_API_USER` | yes | `admin` | wg-easy username (always `admin` on v15) |
 | `PPSA_WG_API_PASS` | yes | `overengineered` | wg-easy admin password |
 | `PPSA_WG_PEER_NAME` | no | `ppsa-server` | Peer name in wg-easy; default `ppsa-$(hostname -s)` |
+| `PPSA_WG_PREFERRED_IP` | no | `10.8.0.2` | Requested WireGuard IP; wg-easy v15 may ignore |
 
 For CI builds, add them as repo secrets at
 **Settings → Secrets and variables → Actions**:
@@ -85,7 +86,8 @@ For CI builds, add them as repo secrets at
 PPSA_WG_API_URL
 PPSA_WG_API_USER
 PPSA_WG_API_PASS
-PPSA_WG_PEER_NAME    (optional)
+PPSA_WG_PEER_NAME        (optional)
+PPSA_WG_PREFERRED_IP     (optional)
 ```
 
 The build script bakes `/etc/ppsa/wireguard.json` (`chmod 600`) into the
@@ -121,7 +123,8 @@ Full `/etc/ppsa/wireguard.json`:
   "api_url": "http://192.168.1.140:51831",
   "api_user": "admin",
   "api_password": "overengineered",
-  "peer_name": "ppsa-v113"
+  "peer_name": "ppsa-v113",
+  "preferred_ip": "10.8.0.2"
 }
 ```
 
@@ -132,6 +135,7 @@ Full `/etc/ppsa/wireguard.json`:
 | `api_user` | yes (if enabled) | — | wg-easy username (always `admin` on v15) |
 | `api_password` | yes (if enabled) | — | wg-easy admin password |
 | `peer_name` | no | `ppsa-$(hostname -s)` | Name shown in the wg-easy peer list |
+| `preferred_ip` | no | (server-assigned) | Requested WireGuard IP (e.g. `10.8.0.2`). wg-easy v15 may ignore on create; the actual assigned IP is in `/run/ppsa-wireguard-ip`. On HTTP 422 the script retries without this field. |
 
 The file is `chmod 600` (contains the API password). Parsing is done by
 `python3` so values with quotes, backslashes, or unicode work correctly.

@@ -16,10 +16,12 @@
 #
 # Config file (/etc/ppsa/wireguard.json):
 #   {
+#     "enabled": true,
 #     "api_url": "http://wg.pleaseee.eu.org:51831",
 #     "api_user": "admin",
 #     "api_password": "...",
-#     "peer_name": "ppsa-server"  // optional, default: ppsa-$(hostname -s)
+#     "peer_name": "ppsa-server",      // optional, default: ppsa-$(hostname -s)
+#     "preferred_ip": "10.8.0.2"       // optional; wg-easy v15 may ignore on create
 #   }
 #
 # Exit codes:
@@ -31,6 +33,9 @@
 #   5 = wg-quick failed
 
 set -Eeuo pipefail
+
+# resolvconf lives in /sbin /usr/sbin; not on root's PATH on minimal Debian.
+export PATH="/sbin:/usr/sbin:${PATH}"
 
 PPSA_VERSION="1.0.0"
 SCRIPT_NAME="$(basename "$0")"
@@ -75,6 +80,7 @@ try:
         out.write('API_USER=' + repr(c.get('api_user', '')) + '\n')
         out.write('API_PASS=' + repr(c.get('api_password', '')) + '\n')
         out.write('PEER_NAME=' + repr(c.get('peer_name', '')) + '\n')
+        out.write('PREFERRED_IP=' + repr(c.get('preferred_ip', '')) + '\n')
         out.write('ENABLED=' + repr(str(c.get('enabled', False)).lower()) + '\n')
 except Exception as e:
     sys.stderr.write('JSON parse error: ' + str(e) + '\n')
@@ -95,6 +101,7 @@ else
     API_USER=$(grep -oP '"api_user"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
     API_PASS=$(grep -oP '"api_password"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
     PEER_NAME=$(grep -oP '"peer_name"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
+    PREFERRED_IP=$(grep -oP '"preferred_ip"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
     ENABLED=$(grep -oP '"enabled"\s*:\s*\K(true|false)' "${CONFIG_FILE}" 2>/dev/null || true)
 fi
 
@@ -110,6 +117,9 @@ fi
 # Default peer name
 PEER_NAME="${PEER_NAME:-ppsa-$(hostname -s)}"
 log "Using peer name: ${PEER_NAME}"
+if [[ -n "${PREFERRED_IP:-}" ]]; then
+    log "Using preferred WireGuard IP: ${PREFERRED_IP} (wg-easy may ignore)"
+fi
 
 # ============================================================================
 # 2. Authenticate to wg-easy (session-cookie)
@@ -198,15 +208,53 @@ else
     # expiresAt: 100 years from now (effectively never, but required by API)
     EXPIRES_AT=$(date -u -d '+100 years' '+%Y-%m-%dT%H:%M:%S.000Z')
 
-    CREATE_RESPONSE=$(curl -fsS -m 10 \
-        -b "${COOKIE_FILE}" \
-        -H "Content-Type: application/json" \
-        -X POST \
-        -d "{\"name\": \"${PEER_NAME}\", \"expiresAt\": \"${EXPIRES_AT}\"}" \
-        "${API_URL}/api/client" 2>&1) || {
-        log "Peer creation failed: ${CREATE_RESPONSE}"
-        exit 4
+    # Build create body via python3 so values with quotes/backslashes are
+    # escaped correctly. If preferred_ip is set, include 'address' — wg-easy
+    # v15 may or may not honor it. On HTTP 422 (unprocessable), retry without
+    # 'address' so the server picks the next free IP.
+    build_create_body() {
+        local want_ip="$1"
+        PPSA_WANT_IP="${want_ip}" \
+        PPSA_NAME="${PEER_NAME}" \
+        PPSA_EXPIRES="${EXPIRES_AT}" \
+        python3 -c '
+import json, os
+body = {"name": os.environ["PPSA_NAME"], "expiresAt": os.environ["PPSA_EXPIRES"]}
+ip = os.environ.get("PPSA_WANT_IP", "").strip()
+if ip:
+    body["address"] = ip
+print(json.dumps(body))
+'
     }
+
+    CREATE_RESP=$(mktemp)
+    post_create() {
+        local body="$1"
+        curl -sS -m 10 \
+            -b "${COOKIE_FILE}" \
+            -H "Content-Type: application/json" \
+            -o "${CREATE_RESP}" \
+            -w "%{http_code}" \
+            -X POST \
+            -d "${body}" \
+            "${API_URL}/api/client"
+        return $?
+    }
+
+    HTTP_CODE=$(post_create "$(build_create_body "${PREFERRED_IP:-}")") || HTTP_CODE="000"
+    if [[ "${HTTP_CODE}" == "422" && -n "${PREFERRED_IP:-}" ]]; then
+        log "Server rejected preferred_ip (HTTP 422); retrying without address"
+        HTTP_CODE=$(post_create "$(build_create_body "")") || HTTP_CODE="000"
+    fi
+
+    if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "201" && "${HTTP_CODE}" != "204" ]]; then
+        log "Peer creation failed: HTTP ${HTTP_CODE}"
+        log "Response: $(head -c 200 "${CREATE_RESP}")"
+        log "Action: check api_url/reachability, or remove preferred_ip from ${CONFIG_FILE}"
+        rm -f "${CREATE_RESP}"
+        fail "Peer creation failed" 4
+    fi
+    rm -f "${CREATE_RESP}"
     log "Peer created"
 
     # Find the new peer ID

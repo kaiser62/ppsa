@@ -58,8 +58,12 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "4.0"   # 4+ core VMs/hosts only. 2-CPU VMs hit RCU stalls during Steam download
-          memory: 6G    # 6GB cap works on 8GB+ hosts; adjust per-machine
+          # ponytail: defaults 1 vCPU / 2GB work on small VMs (1-2 vCPU). Override
+          # per-host in .env for bigger machines. Do NOT raise to 4.0 by default
+          # — 2-CPU VM RCU stalls during Steam download are a vboxguest issue,
+          # not a CPU-count issue, and are not fixed by raising this limit.
+          cpus: "${PPSA_CPUS:-1.0}"
+          memory: "${PPSA_MEMORY:-2G}"
     logging:
       driver: "json-file"
       options:

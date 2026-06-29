@@ -266,13 +266,26 @@ else
 fi
 
 # Write the wireguard.json config (baked into the image).
-# Build-time: PPSA_WG_API_URL, PPSA_WG_API_USER, PPSA_WG_API_PASS, PPSA_WG_PEER_NAME
-# can be set as env vars when running build-live-usb.sh. If not set, the
-# config file is left for the user to fill in via the WebUI.
+# Build-time: PPSA_WG_API_URL, PPSA_WG_API_USER, PPSA_WG_API_PASS, PPSA_WG_PEER_NAME,
+# PPSA_WG_PREFERRED_IP can be set as env vars when running build-live-usb.sh.
+# If not set, the config file is left for the user to fill in via the WebUI.
 mkdir -p /etc/ppsa
 chmod 755 /etc/ppsa
 if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PPSA_WG_API_PASS:-}" ]; then
-    cat > /etc/ppsa/wireguard.json <<WGEOF
+    if [ -n "${PPSA_WG_PREFERRED_IP:-}" ]; then
+        cat > /etc/ppsa/wireguard.json <<WGEOF
+{
+  "enabled": true,
+  "api_url": "${PPSA_WG_API_URL}",
+  "api_user": "${PPSA_WG_API_USER}",
+  "api_password": "${PPSA_WG_API_PASS}",
+  "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}",
+  "preferred_ip": "${PPSA_WG_PREFERRED_IP}"
+}
+WGEOF
+        echo "PPSA WireGuard config: baked in (peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: ${PPSA_WG_PREFERRED_IP})"
+    else
+        cat > /etc/ppsa/wireguard.json <<WGEOF
 {
   "enabled": true,
   "api_url": "${PPSA_WG_API_URL}",
@@ -281,8 +294,9 @@ if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PP
   "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}"
 }
 WGEOF
+        echo "PPSA WireGuard config: baked in (peer: ${PPSA_WG_PEER_NAME:-ppsa-server})"
+    fi
     chmod 600 /etc/ppsa/wireguard.json
-    echo "PPSA WireGuard config: baked in (peer: ${PPSA_WG_PEER_NAME:-ppsa-server})"
 else
     cat > /etc/ppsa/wireguard.json <<WGEOF
 {

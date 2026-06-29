@@ -120,14 +120,15 @@ if command -v netfilter-persistent >/dev/null 2>&1; then
 elif command -v iptables-save >/dev/null 2>&1; then
   mkdir -p /etc/iptables 2>/dev/null || true
   mkdir -p /etc/ppsa 2>/dev/null || true
-  # Try canonical first, then /etc/ppsa (writable in our setup)
+  # Try canonical first, then /etc/ppsa (writable in our setup).
+  # Always also write to /etc/ppsa/ as a backup that the systemd restore
+  # service (ppsa-firewall-restore.service) can find at boot.
   if iptables-save > /etc/iptables/rules.v4 2>/dev/null; then
     : # canonical path works
-  elif iptables-save > /etc/ppsa/iptables.rules.v4 2>/dev/null; then
-    : # /etc/ppsa is writable, use it as fallback
-  else
-    : # couldn't write anywhere
   fi
+  # /etc/ppsa is always writable in our setup, so this is the reliable
+  # persistent path. The restore service checks for this file.
+  iptables-save > /etc/ppsa/iptables.rules.v4 2>/dev/null || true
 fi
 
 echo "WG_FRIENDS rebuilt: TCP=[$TCP] UDP=[$UDP] ICMP=$ICMP"
