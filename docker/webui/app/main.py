@@ -849,7 +849,8 @@ async def wifi_hotspot_start(_user: str = Depends(require_auth)):
 # ---------------------------------------------------------------------------
 # Firewall management (WG_FRIENDS chain on the host, runs via _host_exec)
 # ---------------------------------------------------------------------------
-FIREWALL_CONFIG_HOST = "/etc/ppsa/firewall.json"
+FIREWALL_CONFIG_CONTAINER = "/app/data/firewall.json"  # writable in the webui container
+FIREWALL_CONFIG_HOST = "/etc/ppsa/firewall.json"  # on the PPSA host, read by apply script
 FIREWALL_APPLY_SCRIPT = "/opt/ppsa/scripts/ppsa-firewall-apply.sh"
 
 DEFAULT_FIREWALL_CONFIG = {
@@ -877,17 +878,35 @@ def _fw_validate_ports(ports: list[int], proto: str) -> list[int]:
     return sorted(out)
 
 def _fw_write_config(cfg: dict) -> tuple[int, str, str]:
-    """Write firewall config to host as JSON. Uses base64 to avoid shell escaping."""
-    import base64
-    payload = base64.b64encode(json.dumps(cfg, indent=2).encode()).decode()
-    cmd = (
-        f"mkdir -p /etc/ppsa && echo {shlex.quote(payload)} | base64 -d > {shlex.quote(FIREWALL_CONFIG_HOST)}"
-    )
-    return _host_exec(cmd)
+    """Write firewall config to the webui container's writable data dir.
+
+    The webui container has /:/host:ro (read-only), so we can't write directly to the
+    host's /etc/ppsa via _host_exec. Instead, we write to /app/data/firewall.json
+    (writable Docker volume) and the apply script on the host reads from the volume
+    path: /var/lib/docker/volumes/<webui_data>/_data/firewall.json
+    """
+    # Write the config file in the webui container's writable data dir
+    container_path = Path(FIREWALL_CONFIG_CONTAINER)
+    container_path.parent.mkdir(parents=True, exist_ok=True)
+    container_path.write_text(json.dumps(cfg, indent=2))
+    container_path.chmod(0o600)
+    # Return success (the apply script reads from the webui data dir)
+    return 0, f"wrote {container_path}", ""
 
 @app.get("/api/firewall/config")
 async def get_firewall_config(_user: str = Depends(require_auth)):
-    """Read the current firewall config from the host. Falls back to defaults if missing/invalid."""
+    """Read the current firewall config. Source: webui container's data dir (most recent write)."""
+    # Read from the webui container's writable data dir (most recent user change)
+    container_path = Path(FIREWALL_CONFIG_CONTAINER)
+    if container_path.exists():
+        try:
+            cfg = json.loads(container_path.read_text())
+            merged = dict(DEFAULT_FIREWALL_CONFIG)
+            merged.update({k: v for k, v in cfg.items() if v is not None})
+            return merged
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=500, detail=f"invalid firewall config: {e}")
+    # Fall back to the host copy
     rc, out, err = _host_exec(f"cat {shlex.quote(FIREWALL_CONFIG_HOST)} 2>/dev/null")
     if rc != 0 and not out.strip():
         return DEFAULT_FIREWALL_CONFIG
@@ -895,7 +914,6 @@ async def get_firewall_config(_user: str = Depends(require_auth)):
         cfg = json.loads(out)
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=500, detail=f"invalid firewall config: {e}")
-    # Merge with defaults so missing keys don't break the UI
     merged = dict(DEFAULT_FIREWALL_CONFIG)
     merged.update({k: v for k, v in cfg.items() if v is not None})
     return merged
