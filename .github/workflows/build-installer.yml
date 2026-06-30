@@ -49,18 +49,32 @@ jobs:
           set -e
           mkdir -p installer/config/includes.binary/ppsa
           cd installer/config/includes.binary/ppsa
-          gh release download "${{ inputs.version }}" \
-              --repo kaiser62/ppsa \
-              --pattern "ppsa-usb-*.img.zst" \
-              --pattern "ppsa-usb-*.img.zst.sha256" \
-              --dir .
+
+          # Resolve the asset URLs via the GitHub API (gh CLI is not in the slim container)
+          API="https://api.github.com/repos/kaiser62/ppsa/releases/tags/${{ inputs.version }}"
+          echo "Querying $API"
+          curl -sSL -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+              "$API" -o /tmp/release.json
+
+          IMG_URL=$(python3 -c "import json; d=json.load(open('/tmp/release.json')); a=[x for x in d['assets'] if x['name'].startswith('ppsa-usb-') and x['name'].endswith('.img.zst')]; print(a[0]['browser_download_url'])")
+          SHA_URL=$(python3 -c "import json; d=json.load(open('/tmp/release.json')); a=[x for x in d['assets'] if x['name'].startswith('ppsa-usb-') and x['name'].endswith('.img.zst.sha256')]; print(a[0]['browser_download_url'])")
+
+          echo "Image URL:  $IMG_URL"
+          echo "SHA256 URL: $SHA_URL"
+
+          curl -sSL -H "Authorization: token ${GH_TOKEN}" "$IMG_URL" -o ppsa-usb.img.zst
+          curl -sSL -H "Authorization: token ${GH_TOKEN}" "$SHA_URL" -o ppsa-usb.img.zst.sha256
+
+          # Restore the original filename so the .sha256 file can verify it
+          ORIGINAL_IMG=$(awk '{print $2}' ppsa-usb.img.zst.sha256 | sed 's/^\*//')
+          mv ppsa-usb.img.zst "$ORIGINAL_IMG"
+          SHA_FILE="${ORIGINAL_IMG}.sha256"
+          mv ppsa-usb.img.zst.sha256 "$SHA_FILE"
+
           ls -la
-          # Pick the (single) image
-          IMG=$(ls ppsa-usb-*.img.zst | head -1)
-          SHA=$(ls ppsa-usb-*.img.zst.sha256 | head -1)
-          echo "Bundled image: $IMG"
-          echo "SHA256 file:   $SHA"
-          sha256sum -c "$SHA"
+          echo "Bundled image: $ORIGINAL_IMG"
+          echo "SHA256 file:   $SHA_FILE"
+          sha256sum -c "$SHA_FILE"
 
       - name: Build live ISO
         run: |
