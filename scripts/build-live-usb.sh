@@ -645,6 +645,16 @@ grub-install --target=x86_64-efi \
     --no-nvram 2>&1
 
 # Build a self-contained EFI binary that uses search to find the root.
+# The previous attempt (v1.1.17) used a curated install-modules list and
+# the binary couldn't enumerate (hd0,gpt1)/(hd0,gpt2) - it loaded (hd0)
+# but no partitions, so search-by-UUID found nothing and GRUB dropped
+# to rescue. Switched to --install-modules="all" so every GRUB module
+# (including diskfilter, ahci, ata, all the part_* modules and their
+# dependencies) is embedded. Bigger binary (~2-3 MB) but boots anywhere.
+# Also switched the source spec to `boot/grub/grub.cfg=...` so the
+# embedded config is registered as the default config (previously
+# grub-mkstandalone without the GRUB_PATH= prefix just stored the file
+# as a generic entry, so GRUB didn't know it was the default).
 cat > /tmp/grub-standalone.cfg <<LOADEREOF
 search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
 set prefix=(\$root)/boot/grub
@@ -656,10 +666,10 @@ grub-mkstandalone \
     --output="$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI" \
     --format=x86_64-efi \
     --compress=xz \
-    --install-modules="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 all_video gfxterm font" \
-    /tmp/grub-standalone.cfg 2>&1
+    --install-modules="all" \
+    "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" 2>&1
 rm -f /tmp/grub-standalone.cfg
-echo "GRUB (UEFI) standalone EFI binary built (portable across disk layouts)."
+echo "GRUB (UEFI) standalone EFI binary built (all modules, portable)."
 
 # BIOS: optional - requires a bios_grub partition on GPT disks.
 # Skip if not available; UEFI is the primary boot path.
