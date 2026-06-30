@@ -1,65 +1,40 @@
-# PPSA Installer - packages for the live chroot
-# The installer script needs these tools to write PPSA to a spare drive/partition.
-
-# Partition tools
 parted
-
-# Filesystem tools (format + check)
-e2fsprogs        # mkfs.ext4, resize2fs, e2fsck
-dosfstools       # mkfs.fat
-
-# System utilities (provides lsblk, blkid, wipefs, fdisk, mount, losetup, etc.)
+e2fsprogs
+dosfstools
 util-linux
-
-# Base utilities (provides dd, sync, numfmt, etc.)
 coreutils
-
-# Image handling
-zstd             # decompress the bundled .img.zst
-rsync            # copy PPSA root + ESP into target partitions
-ca-certificates  # TLS for curl (if needed)
-
-# Bootloader (needed for the live ISO boot AND for chroot grub-install
-# against the target PPSA root)
+zstd
+rsync
+ca-certificates
 grub-efi-amd64-bin
 grub-common
 os-prober
-
-# Console / locale / keyboard
 locales
 console-setup
 kbd
 keyboard-configuration
 console-data
-
-# Userland essentials
 sudo
-kmod             # modprobe for loop module
+kmod
 findutils
 grep
 gawk
 sed
 gettext
 git
-
-# Process / debug
 procps
 nano
 less
 file
 diffutils
-psmisc           # pstree, killall
-
-# Network (for diagnostics)
+psmisc
 iproute2
 iputils-ping
 net-tools
-bind9-host       # dig, nslookup
+bind9-host
 curl
-
-# Hardware info
-pciutils         # lspci
-usbutils         # lsusb
+pciutils
+usbutils
 lsof
 lshw
 smartmontools
@@ -67,6 +42,4 @@ hdparm
 sdparm
 dmidecode
 acpid
-
-# Live build auto-locates additional deps; lsblk/blkid/wipefs/numfmt
-# come from util-linux / coreutils and are NOT separate packages.
+openssh-client
