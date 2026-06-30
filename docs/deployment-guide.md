@@ -353,7 +353,7 @@ Normal on first launch — Steam update is downloading (`sudo docker logs -f pps
 ### Player connects but immediately gets "Disconnected from server"
 
 1. **Palworld container not yet ready** — wait until `healthy` and Dashboard shows server version.
-2. **Wrong AllowedIPs in `.conf`** — wg-easy v15 default is `0.0.0.0/0` (full tunnel), which works. If edited to only allow `10.8.0.0/24`, the player can reach the WG subnet but not public internet. Confirm the config includes the PPSA's WG IP range.
+2. **Wrong AllowedIPs in `.conf`** — wg-easy v15 default is `10.8.0.0/24` (PPSA subnet only, **not** a full tunnel — see the source fix in commit `943cc5c`). With this default the player reaches the PPSA over WG and their normal LAN/internet is unaffected. If a config has `AllowedIPs = 0.0.0.0/0` (full tunnel) and the PPSA host has no IP forwarding + NAT, the player's LAN will be cut off. Fix: edit the .conf to `AllowedIPs = 10.8.0.0/24` and re-import, or update the wg-easy `default_allowed_ips` DB row + re-download the config.
 
 ### Console tty1 stuck mid-step
 
