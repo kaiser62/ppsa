@@ -1,0 +1,7 @@
+#!/bin/sh
+# Enable the ppsa-installer service in the live chroot.
+set -e
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /etc/systemd/system/ppsa-installer.service \
+       /etc/systemd/system/multi-user.target.wants/ppsa-installer.service
+echo "ppsa-installer: enabled for tty1"

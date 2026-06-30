@@ -1,0 +1,96 @@
+name: Build PPSA Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'PPSA version to bundle in the installer (e.g. v1.1.16)'
+        required: true
+        type: string
+      force_rebuild:
+        description: 'Force live-build cache invalidation'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    name: Build installer ISO
+    runs-on: ubuntu-latest
+    container:
+      image: debian:13-slim
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          set -e
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              live-build \
+              rsync \
+              zstd \
+              ca-certificates \
+              git \
+              curl \
+              xorriso
+          rm -rf /var/lib/apt/lists/*
+          lb --version
+
+      - name: Fetch PPSA USB image from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mkdir -p installer/config/includes.binary/ppsa
+          cd installer/config/includes.binary/ppsa
+          gh release download "${{ inputs.version }}" \
+              --repo kaiser62/ppsa \
+              --pattern "ppsa-usb-*.img.zst" \
+              --pattern "ppsa-usb-*.img.zst.sha256" \
+              --dir .
+          ls -la
+          # Pick the (single) image
+          IMG=$(ls ppsa-usb-*.img.zst | head -1)
+          SHA=$(ls ppsa-usb-*.img.zst.sha256 | head -1)
+          echo "Bundled image: $IMG"
+          echo "SHA256 file:   $SHA"
+          sha256sum -c "$SHA"
+
+      - name: Build live ISO
+        run: |
+          set -e
+          cd installer
+          if [ "${{ inputs.force_rebuild }}" = "true" ]; then
+              lb clean
+          fi
+          lb build 2>&1 | tail -200
+          ls -la *.iso
+
+      - name: Compress ISO and emit SHA
+        run: |
+          set -e
+          cd installer
+          ISO=$(ls live-image-*.hybrid.iso | head -1)
+          OUT="ppsa-installer-${{ inputs.version }}.iso.zst"
+          zstd -T0 -19 -o "../${OUT}" "${ISO}"
+          cd ..
+          sha256sum "${OUT}" > "${OUT}.sha256"
+          ls -la "${OUT}"*
+
+      - name: Upload to release (draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: "PPSA ${{ inputs.version }}"
+          prerelease: true
+          draft: true
+          fail_on_unmatched_files: true
+          files: |
+            ppsa-installer-${{ inputs.version }}.iso.zst
+            ppsa-installer-${{ inputs.version }}.iso.zst.sha256

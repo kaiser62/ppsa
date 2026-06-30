@@ -1,0 +1,556 @@
+#!/bin/bash
+# PPSA Installer TUI
+# Boot a PPSA USB/VDI image to a user-selected disk or partition.
+# Designed to run from a Debian Live ISO on tty1.
+set -uo pipefail
+
+readonly LOG="/var/log/ppsa-installer.log"
+readonly IMG_DIR="/lib/live/mount/medium/ppsa"
+readonly ESP_SIZE_MB=512
+readonly MIN_DISK_MB=5120      # 5 GB - smaller is rejected
+readonly MIN_ROOT_MB=3072      # 3 GB - partition install needs at least this much root
+: > "$LOG"
+
+# ---- helpers --------------------------------------------------------
+
+log() { printf '[%s] %s\n' "$(date -Iseconds 2>/dev/null || date)" "$*" | tee -a "$LOG" ; }
+die() { log "ERROR: $*"; echo; echo "ERROR: $*"; echo "(see $LOG for details)"; sleep 3; }
+
+cleanup_mounts() {
+    # Unmount anything we may have left behind
+    for mp in /mnt/dst-root /mnt/dst-esp /mnt/src-root /mnt/src-esp; do
+        mountpoint -q "$mp" 2>/dev/null && umount "$mp" 2>/dev/null
+    done
+    for mp in /mnt/dst-root /mnt/dst-root/dev /mnt/dst-root/proc /mnt/dst-root/sys; do
+        mountpoint -q "$mp" 2>/dev/null && umount "$mp" 2>/dev/null
+    done
+    for lp in $(losetup -a 2>/dev/null | awk -F: '{print $1}'); do
+        losetup -d "$lp" 2>/dev/null || true
+    done
+}
+
+trap cleanup_mounts EXIT INT TERM
+
+# ---- live USB detection ---------------------------------------------
+
+# Returns the parent disk (e.g. "sdb") of the live medium so we can
+# exclude it from candidates.
+find_live_parent_disk() {
+    local src
+    src=$(mount 2>/dev/null | awk '/\/lib\/live\/mount\/medium/ {print $1; exit}')
+    if [[ -z "$src" ]]; then
+        # Fallback: anything mounted at /lib/live/mount/medium
+        src=$(awk '$2=="/lib/live/mount/medium" {print $1; exit}' /proc/mounts 2>/dev/null)
+    fi
+    if [[ -z "$src" ]]; then
+        # Fallback: walk up from the image directory
+        df --output=source "$IMG_DIR" 2>/dev/null | tail -1
+    fi
+    # Strip /dev/ and any partition suffix
+    src=$(basename "$src" 2>/dev/null)
+    src=${src%%p*}
+    src=${src%%[0-9]*}
+    echo "$src"
+}
+
+# ---- size parsing ---------------------------------------------------
+
+size_to_mb() {
+    # Input like "24G", "500M", "1024K", "1.5T" -> integer MB
+    local s="$1"
+    s=${s//[[:space:]]/}
+    [[ -z "$s" ]] && { echo 0; return; }
+    local unit="${s: -1}"
+    local num="${s%[KMGT]}"
+    case "$unit" in
+        K|k) echo $(( ${num%.*} / 1024 )) ;;
+        M|m) echo "${num%.*}" ;;
+        G|g) echo $(( ${num%.*} * 1024 )) ;;
+        T|t) echo $(( ${num%.*} * 1024 * 1024 )) ;;
+        *)   echo "${num%.*}" ;;
+    esac
+}
+
+# ---- drive / partition listing --------------------------------------
+
+list_disks() {
+    local live="$1"
+    lsblk -dno NAME,SIZE,MODEL,TRAN 2>/dev/null \
+        | awk -v live="$live" 'NR>1 && $1!="" && $1!=live && $4!="usb" || ($4=="usb" && $1==live) {next} $1!="" && $1!=live {print}'
+}
+
+list_partitions() {
+    local live="$1"
+    lsblk -nrno NAME,SIZE,FSTYPE,TYPE 2>/dev/null \
+        | awk -v live="$live" '$4=="part" && $1!~"^"live {printf "/dev/%s\t%s\t%s\n", $1, $2, $3}'
+}
+
+# ---- menu -----------------------------------------------------------
+
+show_menu() {
+    clear
+    cat <<'EOF'
+================================================================
+  PPSA Installer v1.0.0
+================================================================
+
+  PPSA is a self-contained Palworld dedicated server image.
+
+  - Pick a WHOLE DISK to fully replace it with PPSA (3x YES confirm).
+  - Pick a PARTITION to install PPSA into that partition's space
+    (1x YES confirm). The disk's other partitions are untouched.
+
+  The disk that runs this live USB is excluded automatically.
+
+EOF
+    local live_dev
+    live_dev=$(find_live_parent_disk)
+    [[ -n "$live_dev" ]] && echo "  (Live USB: /dev/$live_dev - excluded)"
+    echo
+
+    local i=1
+    CHOICES=()
+    SELECTED=""
+
+    echo "  WHOLE DISKS (3x confirmation):"
+    echo "  ----------------------------------------------"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local name size model
+        name=$(echo "$line" | awk '{print $1}')
+        size=$(echo "$line" | awk '{print $2}')
+        model=$(echo "$line" | cut -f3-)
+        # Skip very small (< 5 GB) and very large virtual disks that aren't real
+        local mb; mb=$(size_to_mb "$size")
+        (( mb < MIN_DISK_MB )) && { log "skip disk $name (${size} < 5 GB)"; continue; }
+        printf '  [%d] /dev/%-7s %-8s %s\n' "$i" "$name" "$size" "$model"
+        CHOICES+=("/dev/$name|disk")
+        ((i++))
+    done < <(lsblk -dno NAME,SIZE,MODEL,TRAN 2>/dev/null \
+        | awk -v live="$live_dev" 'NR>1 && $1!="" && $1!=live {print}')
+
+    echo
+    echo "  PARTITIONS (1x confirmation):"
+    echo "  ----------------------------------------------"
+    while IFS=$'\t' read -r dev size fstype; do
+        [[ -z "$dev" ]] && continue
+        # Skip partitions on the live USB
+        local pdisk; pdisk=$(basename "$(lsblk -dno PKNAME "$dev" 2>/dev/null)")
+        [[ "$pdisk" == "$live_dev" ]] && continue
+        # Skip Windows reserved / EFI / small partitions
+        local mb; mb=$(size_to_mb "$size")
+        (( mb < MIN_DISK_MB )) && { log "skip partition $dev (${size} < 5 GB)"; continue; }
+        printf '  [%d] %-12s %-8s %s\n' "$i" "$dev" "$size" "$fstype"
+        CHOICES+=("$dev|partition")
+        ((i++))
+    done < <(lsblk -nrno NAME,SIZE,FSTYPE,TYPE 2>/dev/null \
+        | awk -v live="$live_dev" '$4=="part" && $1!~"^"live {printf "/dev/%s\t%s\t%s\n", $1, $2, $3}')
+
+    if (( ${#CHOICES[@]} == 0 )); then
+        echo
+        echo "  No candidate drives or partitions found."
+        echo "  Plug in a target drive (>5 GB) and press Enter to refresh."
+        read -r _
+        return 1
+    fi
+
+    echo
+    echo "  [r] Refresh   [q] Quit to shell"
+    echo
+    local choice
+    while true; do
+        read -r -p "  Select target (1..$((i-1)), r, q): " choice
+        case "$choice" in
+            q|Q) return 1 ;;
+            r|R) return 2 ;;
+            *)  if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice < i )); then
+                    SELECTED="${CHOICES[$((choice-1))]}"
+                    return 0
+                fi
+                echo "  Invalid choice." ;;
+        esac
+    done
+}
+
+# ---- confirmations --------------------------------------------------
+
+confirm_disk_erase() {
+    local dev="$1" size
+    size=$(lsblk -dno SIZE "$dev" 2>/dev/null)
+    cat <<EOF
+
+==========================================================
+  WARNING: WHOLE DISK ERASE
+==========================================================
+  Target:    $dev ($size)
+  Action:    ENTIRE DISK will be overwritten with PPSA.
+  Effect:    ALL existing partitions and data are DESTROYED.
+  Reversible: NO.
+==========================================================
+
+EOF
+    for n in 1 2 3; do
+        local prompt="  Confirm $n/3 - type YES to proceed (or 'q' to abort):"
+        local r
+        read -r -p "$prompt" r
+        case "$r" in
+            q|Q) echo "  Aborted."; return 1 ;;
+            YES) ;;
+            *)   echo "  Aborted (expected YES)."; return 1 ;;
+        esac
+    done
+    return 0
+}
+
+confirm_partition_erase() {
+    local part="$1" size fstype
+    size=$(lsblk -dno SIZE "$part" 2>/dev/null)
+    fstype=$(lsblk -dno FSTYPE "$part" 2>/dev/null)
+    cat <<EOF
+
+==========================================================
+  WARNING: PARTITION REPLACE
+==========================================================
+  Target:    $part ($size, $fstype)
+  Action:    The partition will be deleted. Two new partitions
+             (ESP ${ESP_SIZE_MB}MB + root remainder) will be
+             created in its place, formatted, and populated
+             with PPSA.
+  Other partitions on the same disk are NOT touched.
+  Reversible: NO.
+==========================================================
+
+EOF
+    local r
+    read -r -p "  Type YES to proceed (or 'q' to abort): " r
+    case "$r" in
+        YES) return 0 ;;
+        *)   echo "  Aborted."; return 1 ;;
+    esac
+}
+
+# ---- install: whole disk --------------------------------------------
+
+install_disk() {
+    local dev="$1"
+    log "Installing PPSA to whole disk $dev"
+
+    # 1. Wipe partition table and beginning of disk
+    log "Wiping partition table on $dev"
+    wipefs -af "$dev" >>"$LOG" 2>&1 || true
+    dd if=/dev/zero of="$dev" bs=1M count=16 conv=fsync >>"$LOG" 2>&1 || true
+    sync
+
+    # 2. Write image
+    log "Decompressing and writing image to $dev"
+    if ! zstd -d -c "$IMG_ZST" 2>>"$LOG" | dd of="$dev" bs=4M status=progress oflag=direct >>"$LOG" 2>&1; then
+        die "Failed to write image to $dev"
+        return 1
+    fi
+    sync
+    partprobe "$dev" >>"$LOG" 2>&1 || true
+    sleep 1
+
+    # 3. Grow root partition to fill disk
+    log "Growing root partition (partition 2) to fill disk"
+    if ! parted -s "$dev" resizepart 2 100% >>"$LOG" 2>&1; then
+        log "WARNING: parted resizepart 2 failed (some layouts differ)"
+    fi
+    partprobe "$dev" >>"$LOG" 2>&1 || true
+    sleep 2
+
+    # 4. Resize ext4
+    local root_dev
+    if [[ "$dev" =~ /dev/nvme ]] || [[ "$dev" =~ /dev/mmcblk ]]; then
+        root_dev="${dev}p2"
+    else
+        root_dev="${dev}2"
+    fi
+    log "Resizing ext4 on $root_dev"
+    if ! resize2fs "$root_dev" >>"$LOG" 2>&1; then
+        log "WARNING: resize2fs failed"
+    fi
+    sync
+    log "Whole-disk install complete"
+    return 0
+}
+
+# ---- install: partition ---------------------------------------------
+
+install_partition() {
+    local part="$1"
+    local pdisk pnum
+    pdisk=$(lsblk -dno PKNAME "$part" 2>/dev/null)
+    pnum=$(echo "$part" | grep -oE '[0-9]+$')
+    [[ -z "$pdisk" || -z "$pnum" ]] && { die "Could not determine parent disk/partition number for $part"; return 1; }
+    local disk="/dev/$pdisk"
+    log "Installing PPSA to partition $part (parent=$disk num=$pnum)"
+
+    # 1. Get the partition's start and end sectors
+    local part_info start_sector end_sector total_sectors total_mb
+    part_info=$(parted -s "$disk" unit s print 2>/dev/null | awk -v n="$pnum" '$1==n {print}')
+    [[ -z "$part_info" ]] && { die "parted could not read partition $pnum from $disk"; return 1; }
+    start_sector=$(echo "$part_info" | awk '{print $2}' | tr -d 's')
+    end_sector=$(echo "$part_info" | awk '{print $3}' | tr -d 's')
+    total_sectors=$(( end_sector - start_sector + 1 ))
+    total_mb=$(( total_sectors / 2048 ))
+    log "Partition $part spans sectors $start_sector..$end_sector (${total_mb} MB)"
+
+    if (( total_mb < MIN_DISK_MB )); then
+        die "Partition too small: ${total_mb} MB < ${MIN_DISK_MB} MB minimum"
+        return 1
+    fi
+
+    # 2. Delete the partition
+    log "Deleting partition $pnum from $disk"
+    if ! parted -s "$disk" rm "$pnum" >>"$LOG" 2>&1; then
+        die "Could not delete partition $pnum from $disk"
+        return 1
+    fi
+    partprobe "$disk" >>"$LOG" 2>&1 || true
+    sleep 1
+
+    # 3. Recreate ESP and root in the freed space
+    local esp_sectors=$(( ESP_SIZE_MB * 2048 ))
+    local esp_end_sector=$(( start_sector + esp_sectors - 1 ))
+    local root_start_sector=$(( esp_end_sector + 1 ))
+
+    log "Creating ESP (${ESP_SIZE_MB} MB) at sectors ${start_sector}..${esp_end_sector}"
+    if ! parted -s "$disk" mkpart ESP fat32 "${start_sector}s" "${esp_end_sector}s" >>"$LOG" 2>&1; then
+        die "Could not create ESP"
+        return 1
+    fi
+    if ! parted -s "$disk" set "$pnum" esp on >>"$LOG" 2>&1; then
+        log "WARNING: Could not set esp flag"
+    fi
+    if ! parted -s "$disk" set "$pnum" boot on >>"$LOG" 2>&1; then
+        log "WARNING: Could not set boot flag"
+    fi
+    partprobe "$disk" >>"$LOG" 2>&1 || true
+    sleep 1
+
+    log "Creating root partition from sector ${root_start_sector} to end"
+    if ! parted -s "$disk" mkpart primary ext4 "${root_start_sector}s" "100%" >>"$LOG" 2>&1; then
+        die "Could not create root partition"
+        return 1
+    fi
+    partprobe "$disk" >>"$LOG" 2>&1 || true
+    sleep 1
+
+    # 4. Determine the new partition device names
+    local new_esp new_root
+    if [[ "$disk" =~ /dev/nvme ]] || [[ "$disk" =~ /dev/mmcblk ]]; then
+        new_esp="${disk}p${pnum}"
+        new_root="${disk}p$(( pnum + 1 ))"
+    else
+        new_esp="${disk}${pnum}"
+        new_root="${disk}$(( pnum + 1 ))"
+    fi
+    log "New partitions: ESP=$new_esp root=$new_root"
+
+    # 5. Format
+    log "Formatting ESP $new_esp as FAT32"
+    if ! mkfs.fat -F32 "$new_esp" >>"$LOG" 2>&1; then
+        die "Could not format ESP"
+        return 1
+    fi
+    log "Formatting root $new_root as ext4"
+    if ! mkfs.ext4 -F "$new_root" >>"$LOG" 2>&1; then
+        die "Could not format root"
+        return 1
+    fi
+
+    # 6. Decompress PPSA image
+    local tmp_img="/tmp/ppsa.img"
+    log "Decompressing PPSA image to $tmp_img"
+    if ! zstd -T0 -d -c "$IMG_ZST" > "$tmp_img" 2>>"$LOG"; then
+        die "Could not decompress PPSA image"
+        return 1
+    fi
+
+    # 7. Mount PPSA image via loop
+    log "Setting up loop mounts for PPSA image"
+    if ! losetup -fP "$tmp_img" >>"$LOG" 2>&1; then
+        die "Could not set up loop device"
+        return 1
+    fi
+    sleep 1
+    local loop_dev
+    loop_dev=$(losetup -a 2>/dev/null | grep -F "$tmp_img" | head -1 | cut -d: -f1)
+    [[ -z "$loop_dev" ]] && { die "Could not find loop device"; return 1; }
+    local src_esp="${loop_dev}p1"
+    local src_root="${loop_dev}p2"
+    log "Source partitions: ESP=$src_esp root=$src_root"
+
+    if [[ ! -b "$src_esp" ]] || [[ ! -b "$src_root" ]]; then
+        die "PPSA image partitions not found (expected ${loop_dev}p1 and p2)"
+        return 1
+    fi
+
+    # 8. Mount source and target
+    local m_src_esp="/mnt/src-esp"  m_src_root="/mnt/src-root"
+    local m_dst_esp="/mnt/dst-esp"  m_dst_root="/mnt/dst-root"
+    mkdir -p "$m_src_esp" "$m_src_root" "$m_dst_esp" "$m_dst_root"
+
+    mount "$src_esp"   "$m_src_esp"   >>"$LOG" 2>&1 || { die "mount $src_esp"; return 1; }
+    mount "$src_root"  "$m_src_root"  >>"$LOG" 2>&1 || { die "mount $src_root"; return 1; }
+    mount "$new_esp"   "$m_dst_esp"   >>"$LOG" 2>&1 || { die "mount $new_esp"; return 1; }
+    mount "$new_root"  "$m_dst_root"  >>"$LOG" 2>&1 || { die "mount $new_root"; return 1; }
+
+    # 9. Copy contents
+    log "Copying PPSA root filesystem (this can take several minutes)"
+    if ! rsync -aAX --info=progress2 "$m_src_root/" "$m_dst_root/" >>"$LOG" 2>&1; then
+        die "rsync root failed"
+        return 1
+    fi
+    log "Copying PPSA ESP"
+    if ! rsync -a "$m_src_esp/" "$m_dst_esp/" >>"$LOG" 2>&1; then
+        die "rsync ESP failed"
+        return 1
+    fi
+
+    # 10. Update fstab with the new partition UUIDs
+    log "Updating /etc/fstab in target root"
+    local esp_uuid root_uuid fstab
+    esp_uuid=$(blkid -s UUID -o value "$new_esp"  2>/dev/null)
+    root_uuid=$(blkid -s UUID -o value "$new_root" 2>/dev/null)
+    fstab="$m_dst_root/etc/fstab"
+    if [[ -f "$fstab" ]]; then
+        # Replace boot/efi entry and root entry by UUID
+        if [[ -n "$esp_uuid" ]]; then
+            sed -i -E "s|^UUID=[a-fA-F0-9-]+[[:space:]]+/boot/efi|UUID=$esp_uuid  /boot/efi|" "$fstab"
+        fi
+        if [[ -n "$root_uuid" ]]; then
+            sed -i -E "s|^UUID=[a-fA-F0-9-]+[[:space:]]+/[[:space:]]|UUID=$root_uuid  /               |" "$fstab"
+            # Some images have /boot as separate; leave it alone if present
+        fi
+        log "fstab updated:"
+        grep -E '^UUID=' "$fstab" | tee -a "$LOG"
+    else
+        log "WARNING: no /etc/fstab in target root - leaving as-is"
+    fi
+
+    # 11. Install GRUB to the new ESP
+    log "Installing GRUB to new ESP"
+    mount --bind /dev "$m_dst_root/dev"  >>"$LOG" 2>&1
+    mount --bind /proc "$m_dst_root/proc" >>"$LOG" 2>&1
+    mount --bind /sys  "$m_dst_root/sys"  >>"$LOG" 2>&1
+
+    if ! chroot "$m_dst_root" grub-install \
+        --target=x86_64-efi \
+        --efi-directory=/boot/efi \
+        --boot-directory=/boot \
+        --removable \
+        --no-nvram \
+        --recheck >>"$LOG" 2>&1; then
+        log "WARNING: GRUB install failed - booting may not work"
+    fi
+
+    # 12. Cleanup
+    log "Cleaning up mounts"
+    umount "$m_dst_root/sys"  2>/dev/null || true
+    umount "$m_dst_root/proc" 2>/dev/null || true
+    umount "$m_dst_root/dev"  2>/dev/null || true
+    umount "$m_dst_root"  2>/dev/null || true
+    umount "$m_dst_esp"   2>/dev/null || true
+    umount "$m_src_root"  2>/dev/null || true
+    umount "$m_src_esp"   2>/dev/null || true
+    losetup -d "$loop_dev" 2>/dev/null || true
+    rm -f "$tmp_img"
+
+    log "Partition install complete"
+    return 0
+}
+
+# ---- completion banner ----------------------------------------------
+
+show_completion() {
+    local target="$1" target_type="$2"
+    local parent_disk size
+    if [[ "$target_type" == "disk" ]]; then
+        parent_disk="$target"
+    else
+        parent_disk="/dev/$(lsblk -dno PKNAME "$target" 2>/dev/null)"
+    fi
+    size=$(lsblk -dno SIZE "$parent_disk" 2>/dev/null)
+    local model
+    model=$(lsblk -dno MODEL "$parent_disk" 2>/dev/null | xargs)
+
+    cat <<EOF
+
+================================================================
+  PPSA installation complete!
+================================================================
+
+  Installed to:  $target
+  Parent disk:   $parent_disk ($model, $size)
+  Log file:      $LOG
+
+  NEXT STEPS
+  ----------
+  1. Reboot the machine (type 'reboot' and press Enter).
+  2. At POST, press F12 (or your firmware boot menu key).
+  3. Select the disk labeled "${model}" in the firmware menu.
+  4. PPSA will boot from /EFI/BOOT/BOOTX64.EFI on the ESP.
+
+  After PPSA boots (about 2-3 min for first-boot install):
+  - WebUI:     http://<ppsa-ip>:8080   (login: admin / admin)
+  - SSH:       ssh ppsa@<ppsa-ip>      (password: ppsa)
+  - WireGuard: http://<ppsa-ip>:10086   (after configuring wg-easy)
+
+  Press Enter to return to a shell prompt.
+  Type 'reboot' to reboot, or 'poweroff' to shut down.
+EOF
+    read -r _
+    # After Enter, drop to a shell
+    exec /bin/bash
+}
+
+# ---- main -----------------------------------------------------------
+
+# 0. Find the bundled image
+if [[ ! -d "$IMG_DIR" ]]; then
+    die "PPSA image directory not found: $IMG_DIR
+This ISO is missing the bundled PPSA image.
+You can place the image at $IMG_DIR and re-run ppsa-install."
+    exec /bin/bash
+fi
+
+mapfile -t IMG_CANDIDATES < <(find "$IMG_DIR" -maxdepth 1 -name 'ppsa-usb-*.img.zst' -print 2>/dev/null | sort)
+if (( ${#IMG_CANDIDATES[@]} == 0 )); then
+    die "No ppsa-usb-*.img.zst found in $IMG_DIR"
+    exec /bin/bash
+fi
+IMG_ZST="${IMG_CANDIDATES[0]}"
+log "Using bundled image: $IMG_ZST"
+
+# 1. Menu loop
+while true; do
+    if ! show_menu; then
+        rc=$?
+        if (( rc == 1 )); then
+            log "User quit to shell"
+            exec /bin/bash
+        fi
+        # rc==2 -> refresh
+        continue
+    fi
+
+    TARGET="${SELECTED%|*}"
+    TARGET_TYPE="${SELECTED##*|}"
+
+    if [[ "$TARGET_TYPE" == "disk" ]]; then
+        confirm_disk_erase "$TARGET" || continue
+    else
+        confirm_partition_erase "$TARGET" || continue
+    fi
+
+    if [[ "$TARGET_TYPE" == "disk" ]]; then
+        install_disk "$TARGET" || { sleep 5; continue; }
+    else
+        install_partition "$TARGET" || { sleep 5; continue; }
+    fi
+
+    show_completion "$TARGET" "$TARGET_TYPE"
+    break
+done

@@ -1,0 +1,25 @@
+# /etc/systemd/system/ppsa-installer.service
+# Auto-launches the PPSA installer on tty1 when the live USB boots.
+# Replaces getty on tty1; user gets a login shell after the installer exits.
+
+[Unit]
+Description=PPSA Installer (auto-launch on tty1)
+Documentation=file:///usr/local/share/ppsa/README
+After=systemd-user-sessions.service
+Conflicts=getty@tty1.service
+IgnoreOnIsolate=true
+ConditionPathExists=/usr/local/bin/ppsa-install
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ppsa-install
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+RemainAfterExit=yes
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

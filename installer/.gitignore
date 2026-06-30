@@ -1,0 +1,8 @@
+# Build artifacts (output of lb build)
+live-image-*.hybrid.iso
+*.hybrid.iso
+
+# Bundled PPSA image (downloaded at build time by CI)
+config/includes.binary/ppsa/ppsa-usb-*.img.zst
+config/includes.binary/ppsa/ppsa-usb-*.sha256
+config/includes.binary/ppsa/MANIFEST

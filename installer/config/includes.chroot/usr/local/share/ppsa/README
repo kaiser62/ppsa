@@ -1,0 +1,43 @@
+PPSA Installer Live Image
+=========================
+
+This is a Debian Live ISO that lets you install PPSA onto a spare
+disk or partition on your machine. It is meant to be written to a
+USB drive (with Rufus or `dd`) and booted via the firmware boot
+menu (typically F12 on desktops, F2/F8/F10 on laptops).
+
+After boot, the installer TUI appears on tty1.
+
+Usage
+-----
+
+1. Write the ISO to a USB:
+   - Rufus (Windows):  select the ISO, click Start
+   - dd (Linux):       sudo dd if=ppsa-installer-vX.Y.Z.iso of=/dev/sdX bs=4M status=progress
+
+2. Boot the machine from the USB (F12 / boot menu).
+
+3. The installer shows candidate drives and partitions. Pick one.
+
+4. The installer writes PPSA to the selected target.
+
+5. Reboot, F12 into the disk that now holds PPSA. Done.
+
+Contents
+--------
+
+- /usr/local/bin/ppsa-install        The TUI installer
+- /etc/systemd/system/ppsa-installer.service  Autostart on tty1
+- /lib/live/mount/medium/ppsa/        Bundled PPSA image (read at install time)
+- /var/log/ppsa-installer.log        Installer log (preserved on the live USB)
+
+Re-running the installer
+------------------------
+
+After install, drop to a shell (Enter at the completion banner) and run:
+
+    sudo ppsa-install
+
+or simply reboot the live USB to launch it again.
+
+See docs/dual-boot-install.md in the PPSA repository for the full guide.
