@@ -625,13 +625,19 @@ mount --bind /dev "$MOUNT_DIR/dev"
 mount --bind /proc "$MOUNT_DIR/proc"
 mount --bind /sys "$MOUNT_DIR/sys"
 
-# UEFI: install to the ESP
+# UEFI: install to the ESP.
+# --removable: also write the EFI binary to /EFI/BOOT/BOOTX64.EFI (the UEFI
+# firmware fallback path). This makes the disk visible in the F12 boot menu
+# on any UEFI system without requiring NVRAM writes or post-install fixups.
+# --no-nvram: skip UEFI NVRAM entry creation (keeps Windows untouched;
+# firmware finds the bootloader via the ESP fallback above).
 grub-install --target=x86_64-efi \
     --efi-directory="$MOUNT_DIR/boot/efi" \
     --boot-directory="$MOUNT_DIR/boot" \
     --recheck \
+    --removable \
     --no-nvram 2>&1
-echo "GRUB (UEFI) installed."
+echo "GRUB (UEFI) installed (removable: yes, NVRAM: no)."
 
 # BIOS: optional - requires a bios_grub partition on GPT disks.
 # Skip if not available; UEFI is the primary boot path.
