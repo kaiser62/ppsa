@@ -143,10 +143,53 @@ if docker image inspect thijsvanloef/palworld-server-docker:latest >/dev/null 2>
         docker pull thijsvanloef/palworld-server-docker:latest || echo "WARNING: re-pull failed"
     fi
 fi
-docker compose -f compose/docker-compose.yml up -d --build || {
-    echo "WARNING: Docker stack failed to start fully."
-    echo "Check logs: docker compose -f $PPSA_DIR/compose/docker-compose.yml logs"
-}
+# Bring the stack up. v1.1.19+ fix: don't silently swallow 'up -d'
+# failures. The b14/v1.1.19 test showed `up -d` can exit 0 but
+# produce no containers (transient pull race, daemon not fully
+# ready, etc.). The old code only logged a WARNING and the install
+# marked 'complete' with 0 containers, so the user had to manually
+# run `docker compose up -d` after first boot. This is the silent-
+# failure class the user flagged as "needs to run absolutely
+# without human interaction".
+#
+# Now we: (1) run `up -d`, (2) wait for the daemon to settle,
+# (3) verify at least the webui service is running, (4) retry
+# the whole pull+up cycle once if not, (5) mark installation
+# complete regardless (the next firstboot can retry) but leave
+# a clear marker file if the stack is still down so the splash
+# screen can warn the user.
+STACK_UP_OK=false
+for attempt in 1 2; do
+    echo "Stack up attempt $attempt..."
+    if docker compose -f compose/docker-compose.yml up -d --build; then
+        # Give the daemon a moment to start containers
+        sleep 5
+        # Verify at least one service is actually running
+        if docker compose -f compose/docker-compose.yml ps --services --status running 2>/dev/null | grep -q .; then
+            STACK_UP_OK=true
+            echo "Docker stack is up."
+            break
+        else
+            echo "WARNING: 'up -d' exited 0 but no services are running (attempt $attempt)."
+        fi
+    else
+        echo "WARNING: 'up -d' failed (attempt $attempt)."
+    fi
+    if [ $attempt -lt 2 ]; then
+        echo "Retrying in 10s (full pull + up cycle)..."
+        sleep 10
+        pull_with_retry || true
+    fi
+done
+if [ "$STACK_UP_OK" != "true" ]; then
+    echo "ERROR: Docker stack did not come up after 2 attempts."
+    echo "  The install will mark complete but the WebUI will be unreachable."
+    echo "  After first boot, run:"
+    echo "    sudo docker compose -f $PPSA_DIR/compose/docker-compose.yml up -d"
+    echo "  Or reboot to retry automatically."
+    # Leave a marker so the splash screen and firstboot can warn
+    touch /opt/ppsa/.stack-down 2>/dev/null || true
+fi
 
 # --- Step 4: Install PPSA Wi-Fi onboarding service ---
 # v1.1.0 bug: the build script's chroot runs BEFORE the PPSA files are copied
@@ -306,6 +349,18 @@ echo "  Web UI:       http://$IP:8080"
 echo "  WireGuard UI: http://$IP:10086"
 echo "  SSH:          ssh ppsa@$IP  (password: ppsa)"
 echo ""
+# Warn loudly if the docker stack didn't come up (we left a marker
+# in step 4). The user has to either reboot or run docker compose up
+# manually; the splash makes that obvious.
+if [ -f /opt/ppsa/.stack-down ]; then
+    echo "  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "  !  WARNING: Docker stack did not start. WebUI is   !"
+    echo "  !  unreachable. To recover, SSH in and run:        !"
+    echo "  !    sudo docker compose -f $PPSA_DIR/compose/docker-compose.yml up -d"
+    echo "  !  Or simply reboot to retry automatically.        !"
+    echo "  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo ""
+fi
 echo "  Open the Web UI to complete first-boot configuration."
 echo "  Log in with: admin / admin"
 echo ""
