@@ -82,6 +82,17 @@ jobs:
           F="ppsa-usb-${VER}.img.zst"
           sha256sum "$F" > "${F}.sha256"
 
+      - name: Delete stale master draft
+        if: github.event_name == 'workflow_dispatch'
+        # Ponytail: workflow_dispatch releases to the user-supplied tag, but
+        # when the user runs with version=master, softprops/action-gh-release
+        # fails on re-runs because the master draft already exists. Clean up
+        # first so the new dispatch always creates a fresh release. The
+        # `|| true` makes it a no-op on the first run (no draft exists).
+        run: gh release delete master --yes 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Release
         if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -166,6 +177,15 @@ jobs:
           VER="${{ inputs.version || github.ref_name }}"
           F="ppsa-vbox-${VER}.vdi.zst"
           sha256sum "$F" > "${F}.sha256"
+
+      - name: Delete stale master draft
+        if: github.event_name == 'workflow_dispatch'
+        # Ponytail: see matching step in the usb job — clear any prior
+        # master draft so the new dispatch can create a fresh release
+        # without colliding with the existing tag_name.
+        run: gh release delete master --yes 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload to Release
         if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'

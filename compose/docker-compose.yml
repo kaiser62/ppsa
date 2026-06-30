@@ -183,9 +183,17 @@ services:
       BACKUP_PRUNING_PREFIX: backup-
       BACKUP_FILENAME: "ppsa-{{ .ContainerName }}-{{ .Now | date \"20060102-150405\" }}.tar.gz"
       NOTIFY_URLS: ${DISCORD_WEBHOOK_URL:-}
-    # ponytail: Go static binary on scratch — no shell/tools available for health check.
-    # Container restart policy handles process death. Add health check if upstream
-    # image adds HTTP endpoint.
+    healthcheck:
+      # ponytail: image is alpine:3.24 (NOT scratch — busybox shell + kill are
+      # present), PID 1 is /usr/bin/backup -foreground. The upstream image
+      # has no built-in healthcheck; use kill -0 1 to confirm the backup
+      # process is still alive. Exits 0 if PID 1 exists (and is not owned
+      # by us), 1 otherwise. Same pattern as watchtower/backup kept simple.
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 5m
+      timeout: 5s
+      retries: 2
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -216,7 +224,15 @@ services:
       WATCHTOWER_LABELS: "ppsa.component"
       WATCHTOWER_INCLUDE_RESTARTING: "false"
     healthcheck:
-      test: ["CMD", "pgrep", "-f", "watchtower"]
+      # ponytail: containrrr/watchtower is FROM scratch — no pgrep/sh exists,
+      # so pgrep -f watchtower reports "executable not found" → permanently
+      # unhealthy. The binary itself supports a built-in health check via
+      # --health-check (exits 0 when not running as PID 1, see
+      # containrrr/watchtower cmd/root.go). Use that instead — it matches
+      # the image's upstream HEALTHCHECK CMD. The check is a no-op (process
+      # alive ⇒ binary runs ⇒ exit 0) but never flaps, which is the
+      # actual goal of a healthcheck on a long-running daemon.
+      test: ["CMD", "/watchtower", "--health-check"]
       interval: 5m
       timeout: 5s
       retries: 2

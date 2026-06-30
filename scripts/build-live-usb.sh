@@ -240,6 +240,25 @@ EOF
 systemctl enable docker
 systemctl enable ssh
 systemctl enable systemd-networkd
+
+# --- NetworkManager: only manage Wi-Fi, not ethernet ---
+# Both network-manager and systemd-networkd ship in this image. By default
+# NetworkManager races systemd-networkd for DHCP on every interface,
+# handing out two leases on the same en* NIC on first boot — the
+# secondary lease has a lower metric and steals the default route, so
+# the host briefly holds two IPs and ARP discovery sees a moving target.
+# Tell NetworkManager to leave ethernet alone; systemd-networkd owns it
+# (see /etc/systemd/network/20-wired.network below), and NetworkManager
+# keeps managing wlan0 for the Wi-Fi onboarding / hotspot feature.
+cat > /etc/NetworkManager/NetworkManager.conf <<'NMEOF'
+[main]
+plugins=ifupdown,keyfile
+dns=default
+[ifupdown]
+managed=false
+[keyfile]
+unmanaged-devices=interface-name:en*
+NMEOF
 # PPSA Wi-Fi onboarding (hotspot fallback + auto-connect).
 # PPSA files (including this script + ppsa-wifi-onboard.sh and
 # ppsa-wifi-onboard.service) were already copied to /opt/ppsa/ by the
