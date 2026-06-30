@@ -214,7 +214,7 @@ rm -rf /var/lib/apt/lists/*
 
 # --- Users ---
 useradd -m -s /bin/bash -G sudo,docker ppsa
-echo "ppsa ALL=(ALL) ALL" > /etc/sudoers.d/ppsa
+echo "ppsa ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ppsa
 chmod 440 /etc/sudoers.d/ppsa
 echo "ppsa:ppsa" | chpasswd
 useradd -m -s /bin/bash -G sudo artho
