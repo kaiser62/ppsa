@@ -645,16 +645,31 @@ grub-install --target=x86_64-efi \
     --no-nvram 2>&1
 
 # Build a self-contained EFI binary that uses search to find the root.
-# The previous attempt (v1.1.17) used a curated install-modules list and
-# the binary couldn't enumerate (hd0,gpt1)/(hd0,gpt2) - it loaded (hd0)
-# but no partitions, so search-by-UUID found nothing and GRUB dropped
-# to rescue. Switched to --install-modules="all" so every GRUB module
-# (including diskfilter, ahci, ata, all the part_* modules and their
-# dependencies) is embedded. Bigger binary (~2-3 MB) but boots anywhere.
+# The previous attempts:
+#   v1.1.17 used a curated install-modules list - part_gpt and friends
+#     weren't actually loaded, so (hd0) was visible but (hd0,gpt1/2)
+#     were not, and search-by-UUID found nothing.
+#   v1.1.18 attempt used --install-modules="all" which expanded to
+#     all.mod - but all.mod is not built in the debootstrap chroot
+#     (only grub-efi is, not grub-common's all.mod), so it failed
+#     with "cannot copy all.mod: No such file or directory".
+# Fix: enumerate every .mod file in the GRUB modules directory at
+# build time and pass them all explicitly. This is the same effect
+# as "all" but doesn't depend on the optional all.mod. Bigger binary
+# (~2-3 MB) but boots anywhere.
 # Also switched the source spec to `boot/grub/grub.cfg=...` so the
 # embedded config is registered as the default config (previously
 # grub-mkstandalone without the GRUB_PATH= prefix just stored the file
 # as a generic entry, so GRUB didn't know it was the default).
+GRUB_MOD_DIR="/usr/lib/grub/x86_64-efi"
+GRUB_ALL_MODULES=$(ls "$GRUB_MOD_DIR"/*.mod 2>/dev/null | xargs -n1 basename \
+    | sed 's/\.mod$//' | sort -u | tr '\n' ',' | sed 's/,$//')
+if [ -z "$GRUB_ALL_MODULES" ]; then
+    echo "ERROR: no GRUB modules found in $GRUB_MOD_DIR - is grub-efi-amd64-bin installed?" >&2
+    exit 1
+fi
+echo "Embedding $(echo "$GRUB_ALL_MODULES" | tr ',' '\n' | wc -l) GRUB modules"
+
 cat > /tmp/grub-standalone.cfg <<LOADEREOF
 search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
 set prefix=(\$root)/boot/grub
@@ -662,14 +677,14 @@ configfile (\$root)/boot/grub/grub.cfg
 LOADEREOF
 
 grub-mkstandalone \
-    --directory=/usr/lib/grub/x86_64-efi \
+    --directory="$GRUB_MOD_DIR" \
     --output="$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI" \
     --format=x86_64-efi \
     --compress=xz \
-    --install-modules="all" \
+    --install-modules="$GRUB_ALL_MODULES" \
     "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" 2>&1
 rm -f /tmp/grub-standalone.cfg
-echo "GRUB (UEFI) standalone EFI binary built (all modules, portable)."
+echo "GRUB (UEFI) standalone EFI binary built (all available modules, portable)."
 
 # BIOS: optional - requires a bios_grub partition on GPT disks.
 # Skip if not available; UEFI is the primary boot path.

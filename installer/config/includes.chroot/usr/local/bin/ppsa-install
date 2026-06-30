@@ -504,11 +504,14 @@ install_partition() {
 
     # Rebuild the fallback EFI binary as a self-contained grub-mkstandalone
     # image so the new disk boots cleanly regardless of controller order.
-    # Same fix as build-live-usb.sh: --install-modules="all" so every
-    # GRUB module (including diskfilter, ahci, ata, all part_* modules)
-    # is embedded, and the source spec uses boot/grub/grub.cfg= prefix
-    # so grub-mkstandalone registers the embedded config as the default.
-    local new_root_uuid
+    # Same fix as build-live-usb.sh: enumerate every .mod in
+    # /usr/lib/grub/x86_64-efi/ and pass them all to --install-modules.
+    # The "all" keyword depends on all.mod which isn't always built
+    # (v1.1.18 failed with "cannot copy all.mod: No such file").
+    # The source spec uses boot/grub/grub.cfg= prefix so grub-mkstandalone
+    # registers the embedded config as the default (v1.1.17 missed this
+    # and fell back to the non-existent relative path prefix).
+    local new_root_uuid grub_mod_dir grub_all_modules
     new_root_uuid=$(blkid -s UUID -o value "$new_root" 2>/dev/null)
     log "Building portable EFI binary (root UUID: $new_root_uuid)"
     cat > "$m_dst_root/tmp/grub-standalone.cfg" <<LOADEREOF
@@ -516,14 +519,23 @@ search --no-floppy --fs-uuid --set=root ${new_root_uuid}
 set prefix=(\$root)/boot/grub
 configfile (\$root)/boot/grub/grub.cfg
 LOADEREOF
-    if ! chroot "$m_dst_root" grub-mkstandalone \
-        --directory=/usr/lib/grub/x86_64-efi \
-        --output=/boot/efi/EFI/BOOT/BOOTX64.EFI \
-        --format=x86_64-efi \
-        --compress=xz \
-        --install-modules="all" \
-        "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" >>"$LOG" 2>&1; then
-        log "WARNING: grub-mkstandalone failed - falling back to grub-install output"
+    grub_mod_dir="/usr/lib/grub/x86_64-efi"
+    grub_all_modules=$(chroot "$m_dst_root" ls "$grub_mod_dir"/*.mod 2>/dev/null \
+        | xargs -n1 basename | sed 's/\.mod$//' | sort -u \
+        | tr '\n' ',' | sed 's/,$//')
+    if [ -z "$grub_all_modules" ]; then
+        log "WARNING: no GRUB modules found in $grub_mod_dir - skipping standalone build"
+    else
+        log "Embedding $(echo "$grub_all_modules" | tr ',' '\n' | wc -l) GRUB modules"
+        if ! chroot "$m_dst_root" grub-mkstandalone \
+            --directory="$grub_mod_dir" \
+            --output=/boot/efi/EFI/BOOT/BOOTX64.EFI \
+            --format=x86_64-efi \
+            --compress=xz \
+            --install-modules="$grub_all_modules" \
+            "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" >>"$LOG" 2>&1; then
+            log "WARNING: grub-mkstandalone failed - falling back to grub-install output"
+        fi
     fi
     rm -f "$m_dst_root/tmp/grub-standalone.cfg"
 
