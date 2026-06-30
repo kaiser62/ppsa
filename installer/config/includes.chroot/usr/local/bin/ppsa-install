@@ -485,6 +485,9 @@ install_partition() {
     fi
 
     # 11. Install GRUB to the new ESP
+    # Same fix as the PPSA image build: build a self-contained EFI binary
+    # that uses search to find the root by UUID. Plain grub-install embeds
+    # a device+path that breaks when the new disk has a different layout.
     log "Installing GRUB to new ESP"
     mount --bind /dev "$m_dst_root/dev"  >>"$LOG" 2>&1
     mount --bind /proc "$m_dst_root/proc" >>"$LOG" 2>&1
@@ -494,11 +497,31 @@ install_partition() {
         --target=x86_64-efi \
         --efi-directory=/boot/efi \
         --boot-directory=/boot \
-        --removable \
         --no-nvram \
         --recheck >>"$LOG" 2>&1; then
-        log "WARNING: GRUB install failed - booting may not work"
+        log "WARNING: grub-install failed - booting may not work"
     fi
+
+    # Rebuild the fallback EFI binary as a self-contained grub-mkstandalone
+    # image so the new disk boots cleanly regardless of controller order.
+    local new_root_uuid
+    new_root_uuid=$(blkid -s UUID -o value "$new_root" 2>/dev/null)
+    log "Building portable EFI binary (root UUID: $new_root_uuid)"
+    cat > "$m_dst_root/tmp/grub-standalone.cfg" <<LOADEREOF
+search --no-floppy --fs-uuid --set=root ${new_root_uuid}
+set prefix=(\$root)/boot/grub
+configfile (\$root)/boot/grub/grub.cfg
+LOADEREOF
+    if ! chroot "$m_dst_root" grub-mkstandalone \
+        --directory=/usr/lib/grub/x86_64-efi \
+        --output=/boot/efi/EFI/BOOT/BOOTX64.EFI \
+        --format=x86_64-efi \
+        --compress=xz \
+        --install-modules="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 all_video gfxterm font" \
+        /tmp/grub-standalone.cfg >>"$LOG" 2>&1; then
+        log "WARNING: grub-mkstandalone failed - falling back to grub-install output"
+    fi
+    rm -f "$m_dst_root/tmp/grub-standalone.cfg"
 
     # 12. Cleanup
     log "Cleaning up mounts"
@@ -519,7 +542,7 @@ install_partition() {
 # ---- completion banner ----------------------------------------------
 
 show_completion() {
-    local target="$1" target_type="$2"
+    local target="$1" target_type="$2" auto="${3:-no}"
     local parent_disk size
     if [[ "$target_type" == "disk" ]]; then
         parent_disk="$target"
@@ -532,14 +555,50 @@ show_completion() {
 
     cat <<EOF
 
-================================================================
+============================================================
   PPSA installation complete!
-================================================================
+============================================================
 
   Installed to:  $target
   Parent disk:   $parent_disk ($model, $size)
   Log file:      $LOG
 
+EOF
+
+    if [[ "$auto" == "auto" ]]; then
+        cat <<EOF
+  Auto-rebooting in 5 seconds...
+  (Press Ctrl-C within 5s to drop to a shell instead)
+
+  NEXT STEPS (after reboot)
+  -------------------------
+  1. At POST, press F12 (or your firmware boot menu key).
+  2. Select the disk labeled "${model}" in the firmware menu.
+  3. PPSA will boot from /EFI/BOOT/BOOTX64.EFI on the ESP.
+
+  After PPSA boots (about 2-3 min for first-boot install):
+  - WebUI:     http://<ppsa-ip>:8080   (login: admin / admin)
+  - SSH:       ssh ppsa@<ppsa-ip>      (password: ppsa)
+  - WireGuard: http://<ppsa-ip>:10086   (after configuring wg-easy)
+EOF
+        # 5s grace period so the operator can intercept if needed
+        for i in 5 4 3 2 1; do
+            if read -r -t 1 -n 1 _ 2>/dev/null; then
+                echo
+                echo "  Aborted auto-reboot. Dropping to shell."
+                exec /bin/bash
+            fi
+            printf "\r  Auto-rebooting in %ds...  " "$i"
+        done
+        echo
+        echo "  Rebooting now."
+        sync
+        systemctl reboot
+        # If systemctl reboot fails for some reason, fall back to direct
+        sleep 5
+        reboot
+    else
+        cat <<EOF
   NEXT STEPS
   ----------
   1. Reboot the machine (type 'reboot' and press Enter).
@@ -555,9 +614,10 @@ show_completion() {
   Press Enter to return to a shell prompt.
   Type 'reboot' to reboot, or 'poweroff' to shut down.
 EOF
-    read -r _
-    # After Enter, drop to a shell
-    exec /bin/bash
+        read -r _
+        # After Enter, drop to a shell
+        exec /bin/bash
+    fi
 }
 
 # ---- main -----------------------------------------------------------
@@ -605,6 +665,6 @@ while true; do
         install_partition "$TARGET" || { sleep 5; continue; }
     fi
 
-    show_completion "$TARGET" "$TARGET_TYPE"
+    show_completion "$TARGET" "$TARGET_TYPE" "auto"
     break
 done

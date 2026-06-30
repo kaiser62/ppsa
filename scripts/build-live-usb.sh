@@ -625,19 +625,41 @@ mount --bind /dev "$MOUNT_DIR/dev"
 mount --bind /proc "$MOUNT_DIR/proc"
 mount --bind /sys "$MOUNT_DIR/sys"
 
-# UEFI: install to the ESP.
-# --removable: also write the EFI binary to /EFI/BOOT/BOOTX64.EFI (the UEFI
-# firmware fallback path). This makes the disk visible in the F12 boot menu
-# on any UEFI system without requiring NVRAM writes or post-install fixups.
-# --no-nvram: skip UEFI NVRAM entry creation (keeps Windows untouched;
-# firmware finds the bootloader via the ESP fallback above).
+# UEFI: install to the ESP with a portable EFI binary.
+#
+# The plain `grub-install --removable` flow embeds a device+path in the
+# EFI binary's prefix. That prefix is correct for the build host, but
+# breaks when the image is dd'd to a different disk (different controller,
+# different controller order, or just a different geometry): GRUB drops
+# to rescue shell because (hd0,gpt2)/boot/grub no longer exists.
+#
+# Fix: run grub-install to populate the ESP modules, then rebuild the
+# fallback EFI binary at /EFI/BOOT/BOOTX64.EFI as a self-contained
+# `grub-mkstandalone` image. The embedded loader uses `search` to find
+# the root partition by UUID, so it boots cleanly on any disk layout
+# the image gets written to.
 grub-install --target=x86_64-efi \
     --efi-directory="$MOUNT_DIR/boot/efi" \
     --boot-directory="$MOUNT_DIR/boot" \
     --recheck \
-    --removable \
     --no-nvram 2>&1
-echo "GRUB (UEFI) installed (removable: yes, NVRAM: no)."
+
+# Build a self-contained EFI binary that uses search to find the root.
+cat > /tmp/grub-standalone.cfg <<LOADEREOF
+search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+set prefix=(\$root)/boot/grub
+configfile (\$root)/boot/grub/grub.cfg
+LOADEREOF
+
+grub-mkstandalone \
+    --directory=/usr/lib/grub/x86_64-efi \
+    --output="$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI" \
+    --format=x86_64-efi \
+    --compress=xz \
+    --install-modules="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 all_video gfxterm font" \
+    /tmp/grub-standalone.cfg 2>&1
+rm -f /tmp/grub-standalone.cfg
+echo "GRUB (UEFI) standalone EFI binary built (portable across disk layouts)."
 
 # BIOS: optional - requires a bios_grub partition on GPT disks.
 # Skip if not available; UEFI is the primary boot path.
