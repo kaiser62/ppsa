@@ -89,20 +89,23 @@ jobs:
           files: |
             ppsa-usb-*.zst
             ppsa-usb-*.zst.sha256
-          tag_name: ${{ github.ref_name || inputs.version }}
-          name: PPSA ${{ github.ref_name || inputs.version }}
+          # On workflow_dispatch, github.ref_name is the branch name (e.g. "master")
+          # not the user-supplied version, so prefer inputs.version. On a tag push,
+          # inputs.version is empty, so fall back to the tag name.
+          tag_name: ${{ inputs.version || github.ref_name }}
+          name: PPSA ${{ inputs.version || github.ref_name }}
           draft: ${{ github.event_name == 'workflow_dispatch' }}
-          prerelease: ${{ contains(github.ref_name || inputs.version, '-') }}
+          prerelease: ${{ contains(inputs.version || github.ref_name, '-') }}
           body: |
-            ## PPSA ${{ github.ref_name || inputs.version }}
+            ## PPSA ${{ inputs.version || github.ref_name }}
 
             ### Download
-            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.zst` — zstd-compressed disk image (8GB raw → ~2GB compressed)
-            - `ppsa-usb-${{ github.ref_name || inputs.version }}.img.zst.sha256` — SHA-256 checksum
+            - `ppsa-usb-${{ inputs.version || github.ref_name }}.img.zst` — zstd-compressed disk image (8GB raw → ~2GB compressed)
+            - `ppsa-usb-${{ inputs.version || github.ref_name }}.img.zst.sha256` — SHA-256 checksum
 
             ### VirtualBox (VDI)
-            - `ppsa-vbox-${{ github.ref_name || inputs.version }}.vdi.zst` — VirtualBox disk image (4GB raw)
-            - `ppsa-vbox-${{ github.ref_name || inputs.version }}.vdi.zst.sha256` — SHA-256 checksum
+            - `ppsa-vbox-${{ inputs.version || github.ref_name }}.vdi.zst` — VirtualBox disk image (4GB raw)
+            - `ppsa-vbox-${{ inputs.version || github.ref_name }}.vdi.zst.sha256` — SHA-256 checksum
 
             ### Usage
             1. Download `.img.zst` (or `.vdi.zst` for VirtualBox)
@@ -171,7 +174,7 @@ jobs:
           files: |
             ppsa-vbox-*.zst
             ppsa-vbox-*.zst.sha256
-          tag_name: ${{ github.ref_name || inputs.version }}
-          name: PPSA ${{ github.ref_name || inputs.version }}
+          tag_name: ${{ inputs.version || github.ref_name }}
+          name: PPSA ${{ inputs.version || github.ref_name }}
           draft: ${{ github.event_name == 'workflow_dispatch' }}
-          prerelease: ${{ contains(github.ref_name || inputs.version, '-') }}
+          prerelease: ${{ contains(inputs.version || github.ref_name, '-') }}
