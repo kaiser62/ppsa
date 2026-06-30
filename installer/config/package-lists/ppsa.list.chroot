@@ -1,68 +1,72 @@
+# PPSA Installer - packages for the live chroot
+# The installer script needs these tools to write PPSA to a spare drive/partition.
+
+# Partition tools
 parted
-e2fsprogs
-dosfstools
+
+# Filesystem tools (format + check)
+e2fsprogs        # mkfs.ext4, resize2fs, e2fsck
+dosfstools       # mkfs.fat
+
+# System utilities (provides lsblk, blkid, wipefs, fdisk, mount, losetup, etc.)
 util-linux
-zstd
-curl
-dialog
-locales
-console-setup
-kbd
-rsync
-ca-certificates
+
+# Base utilities (provides dd, sync, numfmt, etc.)
+coreutils
+
+# Image handling
+zstd             # decompress the bundled .img.zst
+rsync            # copy PPSA root + ESP into target partitions
+ca-certificates  # TLS for curl (if needed)
+
+# Bootloader (needed for the live ISO boot AND for chroot grub-install
+# against the target PPSA root)
 grub-efi-amd64-bin
 grub-common
 os-prober
-btrfs-progs
-fdisk
-lsblk
-blkid
-wipefs
+
+# Console / locale / keyboard
+locales
+console-setup
+kbd
+keyboard-configuration
+console-data
+
+# Userland essentials
+sudo
+kmod             # modprobe for loop module
+findutils
+grep
+gawk
+sed
 gettext
 git
-sudo
+
+# Process / debug
+procps
 nano
 less
 file
-bc
-numfmt
-coreutils
-gawk
-grep
-sed
-findutils
 diffutils
-procps
-psmisc
+psmisc           # pstree, killall
+
+# Network (for diagnostics)
+iproute2
+iputils-ping
+net-tools
+bind9-host       # dig, nslookup
+curl
+
+# Hardware info
+pciutils         # lspci
+usbutils         # lsusb
 lsof
 lshw
-dmidecode
 smartmontools
 hdparm
 sdparm
-usbutils
-pciutils
+dmidecode
 acpid
-network-manager
-net-tools
-iproute2
-ifupdown
-isc-dhcp-client
-bind9-host
-dnsutils
-tcpdump
-traceroute
-mtools
-syslinux
-isolinux
-efibootmgr
-shim-signed
-shim-unsigned
-mokutil
-sbsigntool
-signify
-openssh-client
-openssh-server
-keyboard-configuration
-console-data
-EOF
+
+# Live build auto-locates additional deps; lsblk/blkid/wipefs/numfmt
+# come from util-linux / coreutils and are NOT separate packages.
