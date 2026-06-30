@@ -64,12 +64,17 @@ wait_for_api() {
     local elapsed=0 delay=2 next_delay
     log "Waiting for wg-easy API at ${base} (up to ${max_wait}s)..."
     while (( elapsed < max_wait )); do
+        # Curl's -w "%{http_code}" writes "000" on any connection failure.
+        # Don't append another "000" via "|| echo 000" — that produced "000000"
+        # which slipped past the != "000" check and short-circuited the backoff.
         local code
-        code=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "${base}/api/client" 2>/dev/null || echo "000")
-        if [[ "$code" != "000" && "$code" != "" ]]; then
+        code=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "${base}/api/client" 2>/dev/null || true)
+        [[ -z "$code" ]] && code="000"
+        if [[ "$code" != "000" ]]; then
             log "wg-easy API reachable (HTTP $code after ${elapsed}s)"
             return 0
         fi
+        log "  ...still waiting (${elapsed}s elapsed)"
         sleep "$delay"
         elapsed=$(( elapsed + delay ))
         # Backoff: 2, 4, 8, 10, 10, 10...
