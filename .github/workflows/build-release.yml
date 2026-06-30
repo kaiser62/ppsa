@@ -64,6 +64,11 @@ jobs:
           PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}
           PPSA_WG_PEER_NAME: ${{ secrets.PPSA_WG_PEER_NAME }}
           PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
+          # Optional LAN/public WG endpoint overrides (see
+          # docs/dual-boot-install.md). Both have sensible defaults
+          # in ppsa-wireguard-register.sh so unset is fine.
+          PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
+          PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           # sudo env_reset (the sudoers default) strips the PPSA_WG_*
@@ -160,6 +165,11 @@ jobs:
           PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}
           PPSA_WG_PEER_NAME: ${{ secrets.PPSA_WG_PEER_NAME }}
           PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
+          # Optional LAN/public WG endpoint overrides (see
+          # docs/dual-boot-install.md). Both have sensible defaults
+          # in ppsa-wireguard-register.sh so unset is fine.
+          PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
+          PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           # sudo env_reset strips PPSA_WG_*; -E preserves them.

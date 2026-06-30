@@ -78,6 +78,8 @@ GitHub Actions secrets — see `.github/workflows/build-release.yml`):
 | `PPSA_WG_API_PASS` | yes | `overengineered` | wg-easy admin password |
 | `PPSA_WG_PEER_NAME` | no | `ppsa-server` | Peer name in wg-easy; default `ppsa-$(hostname -s)` |
 | `PPSA_WG_PREFERRED_IP` | no | `10.8.0.2` | Requested WireGuard IP; wg-easy v15 may ignore |
+| `PPSA_WG_LAN_ENDPOINT` | no | `192.168.1.140:51830` | LAN wg-easy UDP endpoint. At first boot, the register script tries this **first** (TCP probe); if reachable, it rewrites the wg config to use this endpoint. Bypasses DNS. v1.1.24+. |
+| `PPSA_WG_PUBLIC_ENDPOINT` | no | `118.179.74.23:51830` | Public wg-easy UDP endpoint. Tried as a **fallback** if the LAN one isn't reachable. Also bypasses DNS (uses the IP directly). v1.1.24+. |
 
 For CI builds, add them as repo secrets at
 **Settings → Secrets and variables → Actions**:
@@ -88,6 +90,8 @@ PPSA_WG_API_USER
 PPSA_WG_API_PASS
 PPSA_WG_PEER_NAME        (optional)
 PPSA_WG_PREFERRED_IP     (optional)
+PPSA_WG_LAN_ENDPOINT     (optional, v1.1.24+)
+PPSA_WG_PUBLIC_ENDPOINT  (optional, v1.1.24+)
 ```
 
 The build script bakes `/etc/ppsa/wireguard.json` (`chmod 600`) into the
