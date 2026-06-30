@@ -662,6 +662,17 @@ grub-install --target=x86_64-efi \
 GRUB_MODULES="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 btrfs xfs all_video gfxterm font diskfilter ahci ata usb ohci ehci uhci gettext serial terminal linux16 reboot"
 
 cat > /tmp/grub-standalone.cfg <<LOADEREOF
+# Point prefix at the embedded memdisk so insmod can find the modules.
+# Then load part_gpt/part_msdos (so the disk's partition table is
+# readable) and search (so we can find the root by UUID). Only THEN
+# set the real prefix and load the main config.
+set prefix=(memdisk)/boot/grub
+insmod all_video
+insmod part_gpt
+insmod part_msdos
+insmod search
+insmod search_fs_uuid
+insmod search_label
 search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
 set prefix=(\$root)/boot/grub
 configfile (\$root)/boot/grub/grub.cfg
