@@ -649,26 +649,22 @@ grub-install --target=x86_64-efi \
 #   v1.1.17 used a curated install-modules list - part_gpt and friends
 #     weren't actually loaded, so (hd0) was visible but (hd0,gpt1/2)
 #     were not, and search-by-UUID found nothing.
-#   v1.1.18 attempt used --install-modules="all" which expanded to
-#     all.mod - but all.mod is not built in the debootstrap chroot
-#     (only grub-efi is, not grub-common's all.mod), so it failed
-#     with "cannot copy all.mod: No such file or directory".
-# Fix: enumerate every .mod file in the GRUB modules directory at
-# build time and pass them all explicitly. This is the same effect
-# as "all" but doesn't depend on the optional all.mod. Bigger binary
-# (~2-3 MB) but boots anywhere.
-# Also switched the source spec to `boot/grub/grub.cfg=...` so the
-# embedded config is registered as the default config (previously
-# grub-mkstandalone without the GRUB_PATH= prefix just stored the file
-# as a generic entry, so GRUB didn't know it was the default).
-GRUB_MOD_DIR="/usr/lib/grub/x86_64-efi"
-GRUB_ALL_MODULES=$(ls "$GRUB_MOD_DIR"/*.mod 2>/dev/null | xargs -n1 basename \
-    | sed 's/\.mod$//' | sort -u | tr '\n' ',' | sed 's/,$//')
-if [ -z "$GRUB_ALL_MODULES" ]; then
-    echo "ERROR: no GRUB modules found in $GRUB_MOD_DIR - is grub-efi-amd64-bin installed?" >&2
-    exit 1
-fi
-echo "Embedding $(echo "$GRUB_ALL_MODULES" | tr ',' '\n' | wc -l) GRUB modules"
+#   v1.1.18 attempt with "all" - failed because all.mod isn't built
+#     in the debootstrap chroot.
+#   v1.1.18 second attempt with dynamic enumeration of all .mod
+#     files - grub-mkstandalone treated the entire comma-separated
+#     list as a single module name (Debian trixie's grub-mkstandalone
+#     doesn't split on comma in --install-modules).
+# Fix: use a curated list of modules that covers everything the EFI
+# binary needs, with diskfilter explicitly included. The list is
+# passed as a single string but each module name is space-separated
+# (grub-mkstandalone's actual format - commas don't work here).
+GRUB_MODULES="linux normal search configfile ls echo cat test true regexp \
+part_gpt part_msdos fat ext2 btrfs xfs \
+all_video gfxterm font \
+diskfilter ahci ata usb ohci ehci uhci \
+gettext serial terminal \
+linux16 reboot"
 
 cat > /tmp/grub-standalone.cfg <<LOADEREOF
 search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
@@ -676,15 +672,20 @@ set prefix=(\$root)/boot/grub
 configfile (\$root)/boot/grub/grub.cfg
 LOADEREOF
 
+# grub-mkstandalone expects --install-modules= as either a single
+# module name (used multiple times via separate flags) OR as a
+# single string with the modules space-separated. The Debian
+# trixie grub-mkstandalone doesn't split on commas, so we use the
+# space-separated form.
 grub-mkstandalone \
-    --directory="$GRUB_MOD_DIR" \
+    --directory=/usr/lib/grub/x86_64-efi \
     --output="$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI" \
     --format=x86_64-efi \
     --compress=xz \
-    --install-modules="$GRUB_ALL_MODULES" \
+    --install-modules="$GRUB_MODULES" \
     "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" 2>&1
 rm -f /tmp/grub-standalone.cfg
-echo "GRUB (UEFI) standalone EFI binary built (all available modules, portable)."
+echo "GRUB (UEFI) standalone EFI binary built (curated module list, portable)."
 
 # BIOS: optional - requires a bios_grub partition on GPT disks.
 # Skip if not available; UEFI is the primary boot path.
