@@ -238,6 +238,21 @@ else
     echo "  ppsa-wireguard-register.service not found at $PPSA_DIR/scripts/, skipping"
 fi
 
+# PPSA WireGuard status snapshot (host-side timer that writes /etc/ppsa/wg-status.json
+# every 5s for the webui container to read — avoids the wg-show-in-container netns issue)
+if [ -f "$PPSA_DIR/scripts/ppsa-wg-status-snapshot.sh" ] && \
+   [ -f "$PPSA_DIR/scripts/ppsa-wg-status-snapshot.timer" ] && \
+   [ -f "$PPSA_DIR/scripts/ppsa-wg-status-snapshot.service" ]; then
+    chmod +x "$PPSA_DIR/scripts/ppsa-wg-status-snapshot.sh"
+    cp "$PPSA_DIR/scripts/ppsa-wg-status-snapshot.service" /etc/systemd/system/
+    cp "$PPSA_DIR/scripts/ppsa-wg-status-snapshot.timer" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable --now ppsa-wg-status-snapshot.timer
+    echo "  ppsa-wg-status-snapshot: installed and enabled"
+else
+    echo "  ppsa-wg-status-snapshot: scripts not found, skipping"
+fi
+
 # --- Step 6: Firewall ---
 mark_step 7
 echo "[7/8] Configuring firewall..."

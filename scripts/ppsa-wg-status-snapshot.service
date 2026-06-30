@@ -1,0 +1,18 @@
+# =============================================================================
+# ppsa-wg-status-snapshot.service
+# =============================================================================
+# One-shot helper for ppsa-wg-status-snapshot.timer: writes the current
+# WireGuard interface state to /etc/ppsa/wg-status.json so the webui
+# container (separate netns) can read it without running wg(8) itself.
+# =============================================================================
+
+[Unit]
+Description=PPSA WireGuard status snapshot
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+ConditionPathExists=/opt/ppsa/scripts/ppsa-wg-status-snapshot.sh
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ppsa/scripts/ppsa-wg-status-snapshot.sh
+Nice=10

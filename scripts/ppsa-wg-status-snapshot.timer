@@ -1,0 +1,18 @@
+# =============================================================================
+# ppsa-wg-status-snapshot.timer
+# =============================================================================
+# Fires ppsa-wg-status-snapshot.service every 5s so /etc/ppsa/wg-status.json
+# stays fresh for the webui container.
+# =============================================================================
+
+[Unit]
+Description=PPSA WireGuard status snapshot timer
+Requires=ppsa-wg-status-snapshot.service
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=5s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

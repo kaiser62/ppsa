@@ -295,6 +295,25 @@ else
     echo "WARNING: ppsa-wireguard-register.service not found, skipping"
 fi
 
+# PPSA WireGuard status snapshot: install script + service + timer.
+# The host writes /etc/ppsa/wg-status.json every 5s so the webui container
+# (separate netns) can read WG state without running wg(8) itself.
+if [ -f /opt/ppsa/scripts/ppsa-wg-status-snapshot.sh ]; then
+    chmod +x /opt/ppsa/scripts/ppsa-wg-status-snapshot.sh
+    echo "PPSA WG status snapshot: script installed"
+fi
+if [ -f /opt/ppsa/scripts/ppsa-wg-status-snapshot.service ]; then
+    cp /opt/ppsa/scripts/ppsa-wg-status-snapshot.service /etc/systemd/system/
+    echo "PPSA WG status snapshot: service installed"
+fi
+if [ -f /opt/ppsa/scripts/ppsa-wg-status-snapshot.timer ]; then
+    cp /opt/ppsa/scripts/ppsa-wg-status-snapshot.timer /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ppsa-wg-status-snapshot.timer
+    systemctl start ppsa-wg-status-snapshot.timer
+    echo "PPSA WG status snapshot: timer enabled and started"
+fi
+
 # Read wg-easy creds from wireguard.local.json if it exists and env vars are unset.
 # This file is gitignored. Intended for local builds only - CI never has this file.
 # Search: relative to script, CWD, or /etc/ppsa/. PowerShell orchestrator normally

@@ -614,41 +614,71 @@ async def _wg_health_monitor():
 
 @app.get("/api/wireguard/status")
 async def wireguard_status(_user: str = Depends(require_auth)):
-    """Get WireGuard tunnel status with transfer stats and handshake info."""
+    """Get WireGuard tunnel status from the host's wg-status.json snapshot.
+
+    The host runs ppsa-wg-status-snapshot.timer every 5s and writes
+    /etc/ppsa/wg-status.json (which is mounted into this container via
+    /etc/ppsa:/etc/ppsa:rw). We read the file instead of calling wg(8)
+    ourselves — the webui container is in a different network namespace
+    and can't see the host's wg0 interface.
+    """
     if not WG_CONF.exists():
         return {"status": "not_configured", "detail": "No wg0.conf found"}
-    try:
-        output = _wg_run(["wg", "show", "wg0"])
-        has_handshake = "latest handshake" in output
-        peer_count = output.count("peer:")
 
-        # Parse transfer stats: "transfer: 1.23 GiB received, 456.78 MiB sent"
-        transfer_rx = ""
-        transfer_tx = ""
-        m = re.search(r"transfer:\s*([\d.]+\s*\w+)\s*received,\s*([\d.]+\s*\w+)\s*sent", output)
-        if m:
-            transfer_rx, transfer_tx = m.group(1), m.group(2)
-
-        # Parse latest handshake: "latest handshake: 1 minute, 30 seconds ago"
-        handshake_str = ""
-        for line in output.splitlines():
-            if "latest handshake" in line:
-                handshake_str = line.split(":", 1)[1].strip()
-                break
-
+    snapshot_path = Path("/etc/ppsa/wg-status.json")
+    if not snapshot_path.exists():
         return {
-            "status": "active" if has_handshake else "inactive",
-            "detail": output,
-            "peer_count": peer_count,
-            "has_handshake": has_handshake,
-            "transfer_rx": transfer_rx,
-            "transfer_tx": transfer_tx,
-            "latest_handshake": handshake_str,
+            "status": "inactive",
+            "detail": "wg-status snapshot not yet available; host timer may not be running",
+            "peer_count": 0,
+            "has_handshake": False,
+            "transfer_rx": "",
+            "transfer_tx": "",
+            "latest_handshake": "",
         }
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
+    try:
+        snapshot = json.loads(snapshot_path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"invalid wg-status.json: {e}")
+
+    if not snapshot.get("exists"):
+        return {
+            "status": "inactive",
+            "detail": f"interface {snapshot.get('interface', 'wg0')} is down",
+            "peer_count": 0,
+            "has_handshake": False,
+            "transfer_rx": "",
+            "transfer_tx": "",
+            "latest_handshake": "",
+        }
+
+    peers = snapshot.get("peers", [])
+    has_handshake = any("latest_handshake" in p for p in peers)
+    first = peers[0] if peers else {}
+    transfer = first.get("transfer", "")
+    transfer_rx = ""
+    transfer_tx = ""
+    if " received" in transfer and "sent" in transfer:
+        transfer_rx = transfer.split(" received", 1)[0].strip()
+        transfer_tx = transfer.rsplit(" sent", 1)[0].rsplit(",", 1)[-1].strip()
+    latest_handshake = first.get("latest_handshake", "")
+
+    return {
+        "status": "active" if has_handshake else "inactive",
+        "detail": "",
+        "peer_count": len(peers),
+        "has_handshake": has_handshake,
+        "transfer_rx": transfer_rx,
+        "transfer_tx": transfer_tx,
+        "latest_handshake": latest_handshake,
+        # Rich snapshot (frontend may ignore these; included for future use)
+        "interface": snapshot.get("interface"),
+        "public_key": snapshot.get("public_key"),
+        "listen_port": snapshot.get("listen_port"),
+        "address": snapshot.get("address"),
+        "peers": peers,
+        "snapshot_at": snapshot.get("snapshot_at"),
+    }
 
 @app.get("/api/wireguard/config")
 async def wireguard_get_config(_user: str = Depends(require_auth)):
