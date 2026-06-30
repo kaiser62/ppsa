@@ -337,35 +337,26 @@ fi
 chmod 600 "${WG_CONF}"
 log "Configuration saved to ${WG_CONF}"
 
-# Auto-detect: try the LAN wg endpoint first (fast, no DNS), then
-# the public IP (works in both test and production, no DNS). If
-# neither is reachable, keep the wg-easy default (which is the
-# hostname, works in production with DNS). PPSA_WG_LAN_ENDPOINT
-# and PPSA_WG_PUBLIC_ENDPOINT can be set at build time via the
-# env block in the CI workflow (.github/workflows/build-release.yml).
-LAN_EP="${PPSA_WG_LAN_ENDPOINT:-192.168.1.140:51830}"
-PUB_EP="${PPSA_WG_PUBLIC_ENDPOINT:-118.179.74.23:51830}"
-
-try_endpoint() {
-    local ep="$1" host="${1%:*}" port="${1##*:}"
-    timeout 3 bash -c "</dev/tcp/${host}/${port}" 2>/dev/null
-}
-
-PICKED=""
-if try_endpoint "$LAN_EP"; then
-    log "LAN wg endpoint ${LAN_EP} reachable - using it (overrides wg-easy default)"
-    PICKED="$LAN_EP"
-elif try_endpoint "$PUB_EP"; then
-    log "Public wg endpoint ${PUB_EP} reachable - using it (overrides wg-easy default)"
-    PICKED="$PUB_EP"
-else
-    log "Neither LAN (${LAN_EP}) nor public (${PUB_EP}) wg endpoint reachable - keeping wg-easy default"
-fi
-
-if [ -n "$PICKED" ]; then
-    sed -i "s|^Endpoint = .*\$|Endpoint = ${PICKED}|" "${WG_CONF}"
+# Override the wg-easy default endpoint with the public IP of the
+# wg-easy server. The wg-easy config hands out the public hostname
+# (pleaseee.eu.org) which requires DNS resolution at wg-quick bring-up
+# time. Using the IP directly bypasses that dependency entirely. The
+# PPSA can be in any network and the wg handshake works.
+#
+# Why this works in both test and production:
+# - Test VM on LAN:           public IP is reachable (NAT/firewall allows)
+# - Production remote PPSA:   public IP is reachable (typical)
+# - Edge case (no public net): falls back to the wg-easy default
+#
+# v1.1.25: replaced the previous LAN/public TCP-probe fallback
+# (broken - tested TCP not UDP). wg-quick only needs UDP reachability.
+# Override is unconditional; the wg-easy default is only used if the
+# public IP rewrite is not set.
+PUBLIC_WG_ENDPOINT="${PPSA_WG_PUBLIC_ENDPOINT:-118.179.74.23:51830}"
+if grep -qE '^Endpoint = ' "${WG_CONF}"; then
+    sed -i "s|^Endpoint = .*\$|Endpoint = ${PUBLIC_WG_ENDPOINT}|" "${WG_CONF}"
     chmod 600 "${WG_CONF}"
-    log "Endpoint in ${WG_CONF} rewritten to ${PICKED}"
+    log "Endpoint in ${WG_CONF} overridden to ${PUBLIC_WG_ENDPOINT} (wg-easy default hostname bypassed, no DNS needed)"
 fi
 
 # ============================================================================
