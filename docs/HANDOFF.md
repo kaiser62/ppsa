@@ -228,10 +228,11 @@ The PPSA host can be plugged into any network, gets an IP via DHCP, and presents
 }
 ```
 
-### Known issue
-- Friends get `AllowedIPs = 0.0.0.0/0` in their config (v15 default — can't be changed in API)
-- They CAN route through the PPSA host, but PPSA's iptables drops everything except allowed ports
-- This is the security model the user wanted
+### Default friend AllowedIPs
+- Friends get `AllowedIPs = 10.8.0.0/24` by default (the PPSA subnet, NOT full tunnel — hijacks no default route on the player side)
+- Source: `INIT_ALLOWED_IPS` in the wg-easy v15 container env seeds `user_configs_table.default_allowed_ips` in the SQLite DB (`/etc/wireguard/wg-easy.db`) on first init; v15 has NO `WG_ALLOWED_IPS` env var — the DB row is authoritative. Per-peer overrides via `POST /api/client/{id}` (allowedIps is `z.array(AddressSchema).min(1)`).
+- The PPSA host runs `iptables WG_FRIENDS` which restricts what friends can reach on the host (allowed TCP/UDP/ICMP per `firewall.json`).
+- This is the security model the user wanted: WG tunnel carries only the PPSA subnet, the player keeps its normal LAN/internet default route.
 
 ---
 
