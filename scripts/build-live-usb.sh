@@ -545,6 +545,60 @@ umount "$ROOTFS_DIR/sys" 2>/dev/null || true
 
 fi  # end of PPSA_SKIP_BOOTSTRAP conditional
 
+# Re-write /etc/ppsa/wireguard.json OUTSIDE the chroot after the cache
+# restore. The chroot setup (lines 367-410 above) writes the same
+# file but is skipped when PPSA_SKIP_BOOTSTRAP is set (= CI cache
+# hit). Without this re-write, the cached wireguard.json (from the
+# previous build) ends up in the image even when PPSA_WG_* env vars
+# have changed. Same logic as the in-chroot write, just running
+# against $ROOTFS_DIR directly.
+mkdir -p "$ROOTFS_DIR/etc/ppsa"
+chmod 755 "$ROOTFS_DIR/etc/ppsa"
+if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PPSA_WG_API_PASS:-}" ]; then
+    if [ -n "${PPSA_WG_PREFERRED_IP:-}" ]; then
+        cat > "$ROOTFS_DIR/etc/ppsa/wireguard.json" <<WGEOF
+{
+  "enabled": true,
+  "api_url": "${PPSA_WG_API_URL}",
+  "api_user": "${PPSA_WG_API_USER}",
+  "api_password": "${PPSA_WG_API_PASS}",
+  "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}",
+  "preferred_ip": "${PPSA_WG_PREFERRED_IP}"
+}
+WGEOF
+        echo "PPSA WireGuard config: re-baked (peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: ${PPSA_WG_PREFERRED_IP})"
+    else
+        cat > "$ROOTFS_DIR/etc/ppsa/wireguard.json" <<WGEOF
+{
+  "enabled": true,
+  "api_url": "${PPSA_WG_API_URL}",
+  "api_user": "${PPSA_WG_API_USER}",
+  "api_password": "${PPSA_WG_API_PASS}",
+  "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}"
+}
+WGEOF
+        echo "PPSA WireGuard config: re-baked (peer: ${PPSA_WG_PEER_NAME:-ppsa-server})"
+    fi
+    chmod 600 "$ROOTFS_DIR/etc/ppsa/wireguard.json"
+else
+    # Don't overwrite the cached (or newly-built) file if we have no creds.
+    # The cached version, if any, wins; otherwise install.sh's WebUI flow
+    # will eventually fill this in.
+    if [ ! -f "$ROOTFS_DIR/etc/ppsa/wireguard.json" ]; then
+        cat > "$ROOTFS_DIR/etc/ppsa/wireguard.json" <<WGEOF
+{
+  "enabled": false,
+  "api_url": "",
+  "api_user": "",
+  "api_password": "",
+  "peer_name": "ppsa-server"
+}
+WGEOF
+        chmod 600 "$ROOTFS_DIR/etc/ppsa/wireguard.json"
+        echo "PPSA WireGuard config: not configured (set PPSA_WG_* env vars to bake in)"
+    fi
+fi
+
 # --- Copy PPSA files (always, even on cache hit — repo may have changed) ---
 echo -e "${GREEN}[4/7] Copying PPSA files...${NC}"
 mkdir -p "$ROOTFS_DIR/opt/ppsa"
