@@ -517,12 +517,7 @@ search --no-floppy --fs-uuid --set=root ${new_root_uuid}
 set prefix=(\$root)/boot/grub
 configfile (\$root)/boot/grub/grub.cfg
 LOADEREOF
-    grub_modules="linux normal search configfile ls echo cat test true regexp \
-part_gpt part_msdos fat ext2 btrfs xfs \
-all_video gfxterm font \
-diskfilter ahci ata usb ohci ehci uhci \
-gettext serial terminal \
-linux16 reboot"
+    grub_modules="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 btrfs xfs all_video gfxterm font diskfilter ahci ata usb ohci ehci uhci gettext serial terminal linux16 reboot"
     if ! chroot "$m_dst_root" grub-mkstandalone \
         --directory=/usr/lib/grub/x86_64-efi \
         --output=/boot/efi/EFI/BOOT/BOOTX64.EFI \

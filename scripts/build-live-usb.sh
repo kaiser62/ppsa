@@ -659,12 +659,7 @@ grub-install --target=x86_64-efi \
 # binary needs, with diskfilter explicitly included. The list is
 # passed as a single string but each module name is space-separated
 # (grub-mkstandalone's actual format - commas don't work here).
-GRUB_MODULES="linux normal search configfile ls echo cat test true regexp \
-part_gpt part_msdos fat ext2 btrfs xfs \
-all_video gfxterm font \
-diskfilter ahci ata usb ohci ehci uhci \
-gettext serial terminal \
-linux16 reboot"
+GRUB_MODULES="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 btrfs xfs all_video gfxterm font diskfilter ahci ata usb ohci ehci uhci gettext serial terminal linux16 reboot"
 
 cat > /tmp/grub-standalone.cfg <<LOADEREOF
 search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
