@@ -39,9 +39,18 @@ jobs:
               git \
               curl \
               xorriso \
-              jq
+              jq \
+              gnupg
+          # GitHub CLI is not in Debian repos; install from upstream
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+              -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+              > /etc/apt/sources.list.d/github-cli.list
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gh
           rm -rf /var/lib/apt/lists/*
           lb --version
+          gh --version
 
       - name: Fetch PPSA USB image from release
         env:
@@ -51,30 +60,16 @@ jobs:
           mkdir -p installer/config/includes.binary/ppsa
           cd installer/config/includes.binary/ppsa
 
-          # GitHub draft releases use a synthetic "untagged-..." tag in the download URL.
-          # Look up the real tag via the API.
           VERSION="${{ inputs.version }}"
-          API="https://api.github.com/repos/kaiser62/ppsa/releases/tags/${VERSION}"
-          REAL_TAG=$(curl -fsSL \
-              -H "Authorization: token ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "$API" | jq -r '.tag_name')
-          if [[ -z "$REAL_TAG" || "$REAL_TAG" == "null" ]]; then
-              echo "ERROR: could not resolve release $VERSION"
-              exit 1
-          fi
-          echo "Resolved $VERSION -> $REAL_TAG"
 
-          IMG_NAME="ppsa-usb-${VERSION}.img.zst"
-          SHA_NAME="${IMG_NAME}.sha256"
-          BASE="https://github.com/kaiser62/ppsa/releases/download/${REAL_TAG}"
-
-          echo "Fetching $IMG_NAME from $BASE"
-          curl -fsSL -H "Authorization: token ${GH_TOKEN}" "$BASE/$IMG_NAME" -o "$IMG_NAME"
-          curl -fsSL -H "Authorization: token ${GH_TOKEN}" "$BASE/$SHA_NAME" -o "$SHA_NAME"
-
+          # gh release download resolves the synthetic "untagged-..." URL automatically.
+          gh release download "$VERSION" \
+              --repo kaiser62/ppsa \
+              --pattern "ppsa-usb-${VERSION}.img.zst" \
+              --pattern "ppsa-usb-${VERSION}.img.zst.sha256" \
+              --dir .
           ls -la
-          sha256sum -c "$SHA_NAME"
+          sha256sum -c "ppsa-usb-${VERSION}.img.zst.sha256"
 
       - name: Build live ISO
         run: |
