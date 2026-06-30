@@ -38,7 +38,8 @@ jobs:
               ca-certificates \
               git \
               curl \
-              xorriso
+              xorriso \
+              jq
           rm -rf /var/lib/apt/lists/*
           lb --version
 
@@ -50,10 +51,23 @@ jobs:
           mkdir -p installer/config/includes.binary/ppsa
           cd installer/config/includes.binary/ppsa
 
+          # GitHub draft releases use a synthetic "untagged-..." tag in the download URL.
+          # Look up the real tag via the API.
           VERSION="${{ inputs.version }}"
+          API="https://api.github.com/repos/kaiser62/ppsa/releases/tags/${VERSION}"
+          REAL_TAG=$(curl -fsSL \
+              -H "Authorization: token ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "$API" | jq -r '.tag_name')
+          if [[ -z "$REAL_TAG" || "$REAL_TAG" == "null" ]]; then
+              echo "ERROR: could not resolve release $VERSION"
+              exit 1
+          fi
+          echo "Resolved $VERSION -> $REAL_TAG"
+
           IMG_NAME="ppsa-usb-${VERSION}.img.zst"
           SHA_NAME="${IMG_NAME}.sha256"
-          BASE="https://github.com/kaiser62/ppsa/releases/download/${VERSION}"
+          BASE="https://github.com/kaiser62/ppsa/releases/download/${REAL_TAG}"
 
           echo "Fetching $IMG_NAME from $BASE"
           curl -fsSL -H "Authorization: token ${GH_TOKEN}" "$BASE/$IMG_NAME" -o "$IMG_NAME"
