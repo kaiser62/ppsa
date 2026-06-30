@@ -66,7 +66,11 @@ jobs:
           PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          sudo bash scripts/build-live-usb.sh \
+          # sudo env_reset (the sudoers default) strips the PPSA_WG_*
+          # env vars that the env: block above just set. -E preserves them
+          # so build-live-usb.sh can actually bake the WireGuard creds
+          # into the image.
+          sudo -E bash scripts/build-live-usb.sh \
             --output "ppsa-usb-${VER}.img"
 
       - name: Compress (zstd -10, under 2GB GitHub asset limit)
@@ -158,7 +162,8 @@ jobs:
           PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
-          sudo bash scripts/build-live-usb.sh \
+          # sudo env_reset strips PPSA_WG_*; -E preserves them.
+          sudo -E bash scripts/build-live-usb.sh \
             --output "ppsa-vbox-${VER}.img" --size 12288
 
       - name: Convert raw → VDI
