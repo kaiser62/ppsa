@@ -5,7 +5,8 @@
 set -uo pipefail
 
 readonly LOG="/var/log/ppsa-installer.log"
-readonly IMG_DIR="/lib/live/mount/medium/ppsa"
+# IMG_DIR is set dynamically by find_ppsa_image() - live-boot versions differ.
+IMG_DIR=""
 readonly ESP_SIZE_MB=512
 readonly MIN_DISK_MB=5120      # 5 GB - smaller is rejected
 readonly MIN_ROOT_MB=3072      # 3 GB - partition install needs at least this much root
@@ -31,20 +32,73 @@ cleanup_mounts() {
 
 trap cleanup_mounts EXIT INT TERM
 
-# ---- live USB detection ---------------------------------------------
+# ---- live medium detection ------------------------------------------
+
+# Find the live medium mount point. live-boot versions use different paths:
+#   - older (pre-2023): /lib/live/mount/medium
+#   - modern (Debian 12+): /run/live/medium
+# Returns the mount point or empty.
+find_live_medium() {
+    # Prefer entries in /proc/mounts whose mount path ends in /live/medium
+    # or /live/mount/medium.
+    awk '$2 ~ /\/live\/(mount\/)?medium$/ {print $2; exit}' /proc/mounts 2>/dev/null
+}
+
+# Find the bundled PPSA image. Sets IMG_DIR as a side effect.
+# Prints the absolute path to the .img.zst (or empty on failure).
+find_ppsa_image() {
+    local medium="$1"
+    local candidates=()
+
+    if [[ -n "$medium" ]]; then
+        candidates+=("$medium/ppsa")
+    fi
+    # Hardcoded fallbacks in case find_live_medium() missed something
+    candidates+=(
+        "/lib/live/mount/medium/ppsa"
+        "/run/live/medium/ppsa"
+        "/live/medium/ppsa"
+    )
+
+    for dir in "${candidates[@]}"; do
+        [[ -d "$dir" ]] || continue
+        local img
+        img=$(find "$dir" -maxdepth 1 -name 'ppsa-usb-*.img.zst' -print -quit 2>/dev/null)
+        if [[ -n "$img" ]]; then
+            IMG_DIR="$dir"
+            echo "$img"
+            return 0
+        fi
+    done
+
+    # Last resort: deep search common live mount roots.
+    local img
+    img=$(find /lib/live /run/live -maxdepth 6 \
+            -name 'ppsa-usb-*.img.zst' -print -quit 2>/dev/null)
+    if [[ -n "$img" ]]; then
+        IMG_DIR=$(dirname "$img")
+        echo "$img"
+        return 0
+    fi
+    return 1
+}
 
 # Returns the parent disk (e.g. "sdb") of the live medium so we can
 # exclude it from candidates.
 find_live_parent_disk() {
+    local medium="$1"
     local src
-    src=$(mount 2>/dev/null | awk '/\/lib\/live\/mount\/medium/ {print $1; exit}')
-    if [[ -z "$src" ]]; then
-        # Fallback: anything mounted at /lib/live/mount/medium
-        src=$(awk '$2=="/lib/live/mount/medium" {print $1; exit}' /proc/mounts 2>/dev/null)
+    # Look for the medium device in /proc/mounts
+    if [[ -n "$medium" ]]; then
+        src=$(awk -v mnt="$medium" '$2==mnt {print $1; exit}' /proc/mounts 2>/dev/null)
+    fi
+    if [[ -z "$src" && -n "$IMG_DIR" ]]; then
+        # Walk up from the image directory
+        src=$(df --output=source "$IMG_DIR" 2>/dev/null | tail -1)
     fi
     if [[ -z "$src" ]]; then
-        # Fallback: walk up from the image directory
-        df --output=source "$IMG_DIR" 2>/dev/null | tail -1
+        # Try the legacy mount output
+        src=$(awk '$2 ~ /\/live\/(mount\/)?medium$/ {print $1; exit}' /proc/mounts 2>/dev/null)
     fi
     # Strip /dev/ and any partition suffix
     src=$(basename "$src" 2>/dev/null)
@@ -104,7 +158,7 @@ show_menu() {
 
 EOF
     local live_dev
-    live_dev=$(find_live_parent_disk)
+    live_dev=$(find_live_parent_disk "$LIVE_MEDIUM")
     [[ -n "$live_dev" ]] && echo "  (Live USB: /dev/$live_dev - excluded)"
     echo
 
@@ -509,20 +563,20 @@ EOF
 # ---- main -----------------------------------------------------------
 
 # 0. Find the bundled image
-if [[ ! -d "$IMG_DIR" ]]; then
-    die "PPSA image directory not found: $IMG_DIR
-This ISO is missing the bundled PPSA image.
-You can place the image at $IMG_DIR and re-run ppsa-install."
-    exec /bin/bash
-fi
+LIVE_MEDIUM=$(find_live_medium)
+log "Live medium: ${LIVE_MEDIUM:-<not found>}"
 
-mapfile -t IMG_CANDIDATES < <(find "$IMG_DIR" -maxdepth 1 -name 'ppsa-usb-*.img.zst' -print 2>/dev/null | sort)
-if (( ${#IMG_CANDIDATES[@]} == 0 )); then
-    die "No ppsa-usb-*.img.zst found in $IMG_DIR"
+if ! IMG_ZST=$(find_ppsa_image "$LIVE_MEDIUM"); then
+    die "PPSA image not found in any live medium location.
+Tried: \$LIVE_MEDIUM/ppsa, /lib/live/mount/medium/ppsa,
+      /run/live/medium/ppsa, /live/medium/ppsa, plus a deep search.
+This ISO is missing the bundled PPSA image. Drop to a shell with:
+      mount | grep medium
+to see where the live medium is mounted, then look for the 'ppsa'
+subdirectory there."
     exec /bin/bash
 fi
-IMG_ZST="${IMG_CANDIDATES[0]}"
-log "Using bundled image: $IMG_ZST"
+log "Using bundled image: $IMG_ZST (in $IMG_DIR)"
 
 # 1. Menu loop
 while true; do
