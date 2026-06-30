@@ -50,26 +50,14 @@ jobs:
           mkdir -p installer/config/includes.binary/ppsa
           cd installer/config/includes.binary/ppsa
 
-          # Resolve the asset URLs via the GitHub API.
-          # python3 is not in the slim image; use curl + grep/sed.
-          API="https://api.github.com/repos/kaiser62/ppsa/releases/tags/${{ inputs.version }}"
-          curl -sSL -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
-              "$API" -o /tmp/release.json
+          VERSION="${{ inputs.version }}"
+          IMG_NAME="ppsa-usb-${VERSION}.img.zst"
+          SHA_NAME="${IMG_NAME}.sha256"
+          BASE="https://github.com/kaiser62/ppsa/releases/download/${VERSION}"
 
-          # Extract the two asset names we want
-          IMG_NAME=$(grep -oE '"name":\s*"ppsa-usb-v[0-9.]+\.img\.zst"' /tmp/release.json | head -1 | sed -E 's/.*"ppsa-(usb-v[0-9.]+\.img\.zst)".*/\1/')
-          SHA_NAME=$(grep -oE '"name":\s*"ppsa-usb-v[0-9.]+\.img\.zst\.sha256"' /tmp/release.json | head -1 | sed -E 's/.*"ppsa-(usb-v[0-9.]+\.img\.zst\.sha256)".*/\1/')
-          if [[ -z "$IMG_NAME" || -z "$SHA_NAME" ]]; then
-              echo "ERROR: could not find ppsa-usb-*.img.zst in release ${{ inputs.version }}"
-              grep -oE '"name":\s*"[^"]+"' /tmp/release.json | head -20
-              exit 1
-          fi
-          echo "Image:  $IMG_NAME"
-          echo "SHA256: $SHA_NAME"
-
-          BASE="https://github.com/kaiser62/ppsa/releases/download/${{ inputs.version }}"
-          curl -sSL -H "Authorization: token ${GH_TOKEN}" "$BASE/$IMG_NAME" -o "$IMG_NAME"
-          curl -sSL -H "Authorization: token ${GH_TOKEN}" "$BASE/$SHA_NAME" -o "$SHA_NAME"
+          echo "Fetching $IMG_NAME from $BASE"
+          curl -fsSL -H "Authorization: token ${GH_TOKEN}" "$BASE/$IMG_NAME" -o "$IMG_NAME"
+          curl -fsSL -H "Authorization: token ${GH_TOKEN}" "$BASE/$SHA_NAME" -o "$SHA_NAME"
 
           ls -la
           sha256sum -c "$SHA_NAME"
