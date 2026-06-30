@@ -1,0 +1,9 @@
+{
+  "_comment": "Drop this as wireguard.local.json (gitignored) with your real wg-easy creds. The local builder will bake them into the image. First boot auto-registers as a peer. CI builds never read this file. The _comment field is stripped by the builder when reading.",
+  "enabled": true,
+  "api_url": "http://192.168.1.140:51831",
+  "api_user": "admin",
+  "api_password": "replace-me-with-your-wg-easy-admin-password",
+  "peer_name": "ppsa-server",
+  "preferred_ip": "10.8.0.2"
+}

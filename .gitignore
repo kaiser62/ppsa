@@ -4,6 +4,11 @@ build/
 *.img.xz
 *.img.xz.sha256
 
+# Local WireGuard credentials (drop your wg-easy creds here, gitignored)
+# Copy wireguard.local.json.example to wireguard.local.json and fill in.
+# CI builds never read this file; only local builds via Start-PpsaBuilder.ps1.
+wireguard.local.json
+
 # Python
 __pycache__/
 *.py[cod]

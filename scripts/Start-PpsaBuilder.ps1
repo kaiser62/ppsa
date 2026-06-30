@@ -43,6 +43,56 @@ function Get-TriggerComment {
     return $null
 }
 
+function Get-LocalWireguardEnv {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)] [string]$RepoRoot
+    )
+    $localJson = Join-Path $RepoRoot "wireguard.local.json"
+    if (-not (Test-Path $localJson)) {
+        return @{}
+    }
+    try {
+        $cfg = Get-Content $localJson -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Write-LogWarn -Module "Orchestrator" -Message "wireguard.local.json present but unparseable: $($_.Exception.Message)"
+        return @{}
+    }
+    if (-not $cfg.enabled) {
+        Write-LogInfo -Module "Orchestrator" -Message "wireguard.local.json has enabled=false, skipping"
+        return @{}
+    }
+    # Map JSON fields to build env vars. PowerShell-process env vars win (allow CI override).
+    $map = @{
+        "PPSA_WG_API_URL"       = "api_url"
+        "PPSA_WG_API_USER"      = "api_user"
+        "PPSA_WG_API_PASS"      = "api_password"
+        "PPSA_WG_PEER_NAME"     = "peer_name"
+        "PPSA_WG_PREFERRED_IP"  = "preferred_ip"
+    }
+    $out = @{}
+    foreach ($envName in $map.Keys) {
+        $jsonField = $map[$envName]
+        $val = $cfg.$jsonField
+        if ($null -eq $val) { $val = "" }
+        # Process env override: if already set (non-empty), keep that value.
+        $existing = [Environment]::GetEnvironmentVariable($envName, "Process")
+        if ([string]::IsNullOrEmpty($existing)) {
+            $out[$envName] = [string]$val
+        } else {
+            $out[$envName] = $existing
+        }
+    }
+    # Drop empty optional fields so the bash build keeps its defaults.
+    if ([string]::IsNullOrEmpty($out["PPSA_WG_PREFERRED_IP"])) {
+        $out.Remove("PPSA_WG_PREFERRED_IP")
+    }
+    if ($out.Count -gt 0) {
+        Write-LogInfo -Module "Orchestrator" -Message "wireguard.local.json: loaded $($out.Keys -join ', ')"
+    }
+    return $out
+}
+
 function Invoke-PpsaBuildOnce {
     [CmdletBinding()]
     param(
@@ -51,6 +101,10 @@ function Invoke-PpsaBuildOnce {
 
     $repo = if ($Repository) { $Repository } else { $Config.github.repository }
     $issue = if ($IssueNumber -gt 0) { $IssueNumber } else { [int]$Config.github.issue_number }
+
+    # Read local wg-easy creds (gitignored) so first-boot auto-registration
+    # works without the user touching the build script. CI never has this file.
+    $wgEnv = Get-LocalWireguardEnv -RepoRoot $script:RepoRoot
 
     # Phase 1: Watch GitHub for a build trigger
     $trigger = $null
@@ -87,7 +141,7 @@ function Invoke-PpsaBuildOnce {
     # Phase 3: Build (WSL)
     $build = $null
     try {
-        $build = Invoke-Build -Config $Config -Tag $next.Tag
+        $build = Invoke-Build -Config $Config -Tag $next.Tag -ExtraEnv $wgEnv
     } catch {
         Write-LogError -Module "Orchestrator" -Message "Invoke-Build threw" -Location $_.ScriptStackTrace -RecommendedAction "See Builder logs above"
         Complete-BuildJob -Job $next -Success $false

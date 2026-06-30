@@ -276,6 +276,56 @@ else
     echo "WARNING: ppsa-wireguard-register.service not found, skipping"
 fi
 
+# Read wg-easy creds from wireguard.local.json if it exists and env vars are unset.
+# This file is gitignored. Intended for local builds only - CI never has this file.
+# Search: relative to script, CWD, or /etc/ppsa/. PowerShell orchestrator normally
+# pre-sets PPSA_WG_* env vars, so this block is a fallback for direct-WSL users.
+WG_LOCAL_JSON=""
+for candidate in \
+  "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/../wireguard.local.json" \
+  "./wireguard.local.json" \
+  "/etc/ppsa/wireguard.local.json"; do
+  if [ -f "$candidate" ]; then
+    WG_LOCAL_JSON="$candidate"
+    break
+  fi
+done
+if [ -n "$WG_LOCAL_JSON" ] && [ -z "${PPSA_WG_API_URL:-}" ]; then
+  echo "PPSA WireGuard: reading creds from $WG_LOCAL_JSON"
+  # Write a tiny parser to a tempfile to avoid shell-quoting hell, then
+  # source its output (it emits "export KEY=value" lines).
+  WG_PARSER=$(mktemp --suffix=.sh)
+  cat > "$WG_PARSER" <<'PARSER_EOF'
+#!/bin/bash
+# ponytail: emitted by build-live-usb.sh from wireguard.local.json
+# Pre-set WG_LOCAL_JSON in the calling env.
+PARSER_EOF
+  WG_LOCAL_JSON="$WG_LOCAL_JSON" python3 - >> "$WG_PARSER" 2>/dev/null <<'PYEOF'
+import json, os
+with open(os.environ["WG_LOCAL_JSON"]) as f:
+    cfg = json.load(f)
+cfg.pop("_comment", None)
+if cfg.get("enabled"):
+    def emit(k, v):
+        # Escape for double-quoted shell strings
+        sv = str(v).replace("\\", "\\\\").replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
+        print(f'export {k}="{sv}"')
+    emit("PPSA_WG_API_URL",    cfg.get("api_url", ""))
+    emit("PPSA_WG_API_USER",   cfg.get("api_user", ""))
+    emit("PPSA_WG_API_PASS",   cfg.get("api_password", ""))
+    emit("PPSA_WG_PEER_NAME",  cfg.get("peer_name", "ppsa-server"))
+    if cfg.get("preferred_ip"):
+        emit("PPSA_WG_PREFERRED_IP", cfg["preferred_ip"])
+PYEOF
+  if [ $? -eq 0 ] && [ -s "$WG_PARSER" ] && grep -q '^export ' "$WG_PARSER"; then
+    # shellcheck disable=SC1090
+    . "$WG_PARSER"
+  else
+    echo "WARN: failed to parse $WG_LOCAL_JSON"
+  fi
+  rm -f "$WG_PARSER"
+fi
+
 # Write the wireguard.json config (baked into the image).
 # Build-time: PPSA_WG_API_URL, PPSA_WG_API_USER, PPSA_WG_API_PASS, PPSA_WG_PEER_NAME,
 # PPSA_WG_PREFERRED_IP can be set as env vars when running build-live-usb.sh.

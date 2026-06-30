@@ -169,7 +169,15 @@ EOF
   ${DIM}Players connect via pleaseee.eu.org:51830 (wg-easy UI: :51831)${RESET}
 
 EOF
+            elif [[ -f /etc/ppsa/wireguard.json ]] && \
+                 grep -q '"enabled"[[:space:]]*:[[:space:]]*true' /etc/ppsa/wireguard.json 2>/dev/null; then
+                # configured but not yet registered (register script is still polling)
+                cat <<EOF
+  ${DIM}WireGuard: registering with wg-easy (will retry on next boot if needed)${RESET}
+
+EOF
             else
+                # not configured at all
                 cat <<EOF
   ${DIM}WireGuard: not connected (can be configured via WebUI)${RESET}
 
@@ -237,6 +245,19 @@ main() {
         sleep 1
         ip=$(get_ip)
     done
+
+    # Wait up to 15s for the WG IP file. The register script writes it on
+    # success and is synchronous in install.sh step 5. If the file isn't
+    # there yet, the registration is either still in progress or failed.
+    if [[ -f /etc/ppsa/wireguard.json ]] && \
+       grep -q '"enabled"[[:space:]]*:[[:space:]]*true' /etc/ppsa/wireguard.json 2>/dev/null; then
+        local wg_wait=0
+        while (( wg_wait < 15 )); do
+            [[ -r /run/ppsa-wireguard-ip ]] && break
+            sleep 1
+            wg_wait=$(( wg_wait + 1 ))
+        done
+    fi
 
     render "$TOTAL_STEPS" "PPSA is ready." "$ip"
 

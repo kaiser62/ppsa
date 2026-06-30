@@ -50,6 +50,37 @@ WG_TABLE_ID=51820
 log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${LOG_TAG} $*"; }
 fail() { log "ERROR: $*"; exit "${2:-1}"; }
 
+# Wait for the wg-easy API host to be reachable. The PPSA can boot before the
+# homeserver/VPS hosting wg-easy (race during a power outage, or the wg-easy
+# container is still starting on the homeserver). The original script used
+# -m 10 curl timeouts with no retry and bailed on the first failure, so the
+# user saw "API unreachable" on the welcome screen for a service that would
+# have been reachable 30 seconds later. Poll instead.
+#
+# Any HTTP response (including 401/403/404/5xx) means the TCP/HTTP path is
+# alive — auth and routing are separate concerns handled by the caller.
+wait_for_api() {
+    local base="$1" max_wait="${2:-120}"
+    local elapsed=0 delay=2 next_delay
+    log "Waiting for wg-easy API at ${base} (up to ${max_wait}s)..."
+    while (( elapsed < max_wait )); do
+        local code
+        code=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" "${base}/api/client" 2>/dev/null || echo "000")
+        if [[ "$code" != "000" && "$code" != "" ]]; then
+            log "wg-easy API reachable (HTTP $code after ${elapsed}s)"
+            return 0
+        fi
+        sleep "$delay"
+        elapsed=$(( elapsed + delay ))
+        # Backoff: 2, 4, 8, 10, 10, 10...
+        next_delay=$(( delay * 2 ))
+        (( next_delay > 10 )) && next_delay=10
+        delay=$next_delay
+    done
+    log "wg-easy API not reachable after ${max_wait}s"
+    return 1
+}
+
 # ============================================================================
 # 1. Read config
 # ============================================================================
@@ -120,6 +151,14 @@ log "Using peer name: ${PEER_NAME}"
 if [[ -n "${PREFERRED_IP:-}" ]]; then
     log "Using preferred WireGuard IP: ${PREFERRED_IP} (wg-easy may ignore)"
 fi
+
+# Wait for wg-easy to come up. Handles the case where the PPSA boots before
+# the homeserver/VPS is up (race during a power outage, or the wg-easy
+# container is still starting on the homeserver). PPSA_WG_WAIT_TIMEOUT
+# defaults to 120s; install.sh's outer timeout is the absolute upper bound.
+wait_for_api "${API_URL}" "${PPSA_WG_WAIT_TIMEOUT:-120}" || {
+    fail "wg-easy API not reachable at ${API_URL} after waiting" 2
+}
 
 # ============================================================================
 # 2. Authenticate to wg-easy (session-cookie)

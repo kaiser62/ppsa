@@ -31,7 +31,11 @@ function Invoke-Build {
         [object]$Config,
         [Parameter(Mandatory=$true)]
         [string]$Tag,
-        [string]$LogDirectory
+        [string]$LogDirectory,
+        # ponytail: hashtable of extra env vars to inline-prefix the bash command
+        # (WSL doesn't reliably inherit PowerShell process env). Used to pass
+        # wireguard creds read from wireguard.local.json by the orchestrator.
+        [hashtable]$ExtraEnv = @{}
     )
 
     $wslUser    = $Config.wsl.user
@@ -52,6 +56,22 @@ function Invoke-Build {
     $imgZstPath  = "$wslOutDir/$imgZstFile"
     $shaPath     = "$wslOutDir/$shaFile"
 
+    # Build inline env prefix (KEY='value' KEY2='value2' ...) for the bash command.
+    # ponytail: the standard shell-quote-of-single-quote trick is end-quote,
+    # backslash, single-quote, restart-quote ('\''). PS single-quoted strings
+    # can't easily contain a literal '\'', so build it via [char].
+    $singleQuoteEscape = [char]39 + [char]92 + [char]39 + [char]39  # 4 chars: ' \ ' '
+    $envPrefix = ""
+    if ($ExtraEnv -and $ExtraEnv.Count -gt 0) {
+        $pairs = @()
+        foreach ($k in $ExtraEnv.Keys) {
+            $v = [string]$ExtraEnv[$k]
+            $ev = $v -replace "'", $singleQuoteEscape
+            $pairs += "$k='$ev'"
+        }
+        $envPrefix = ($pairs -join " ") + " "
+    }
+
     $phases = @()
 
     # Phase 1: Prepare WSL build directory
@@ -69,7 +89,9 @@ function Invoke-Build {
     # Phase 2: Run build-live-usb.sh
     Write-LogInfo -Module "Builder" -Message "Starting build-live-usb.sh → $imgPath (${imgSize}MB)..."
     $sw = Start-Timer
-    $buildCmd = "cd $project && echo '$sudoPass' | sudo -S bash scripts/build-live-usb.sh --output '$imgPath' --size $imgSize 2>&1"
+    # ponytail: env vars must be set INSIDE the sudo command (sudo with env_reset
+    # would strip them from the parent shell). Inline before the bash invocation.
+    $buildCmd = "cd $project && echo '$sudoPass' | sudo -S ${envPrefix}bash scripts/build-live-usb.sh --output '$imgPath' --size $imgSize 2>&1"
     $r = Invoke-WslCommand -Command $buildCmd -WslUser $wslUser -TimeoutSeconds 7200
     $sw.Stop()
     $phases += [PSCustomObject]@{ Name = "build-image"; Success = ($r.ExitCode -eq 0); ExitCode = $r.ExitCode; Duration = $sw.Elapsed; Stdout = $r.Stdout; Stderr = $r.Stderr }

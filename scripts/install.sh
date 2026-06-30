@@ -175,17 +175,52 @@ fi
 # can be retried later via the WebUI.
 mark_step 6
 echo "[6/8] Connecting to PPSA WireGuard network..."
+
+# Read config to announce what we're about to do (and skip if disabled).
+wg_api_url=""; wg_peer_name=""; wg_enabled="false"
+if [ -f /etc/ppsa/wireguard.json ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        eval "$(python3 -c '
+import json, sys
+try:
+    with open("/etc/ppsa/wireguard.json") as f:
+        c = json.load(f)
+    def esc(v): return str(v).replace(chr(92), chr(92)+chr(92)).replace(chr(34), chr(92)+chr(34)).replace(chr(36), chr(92)+chr(36)).replace(chr(96), chr(92)+chr(96))
+    print("wg_enabled="   + esc(str(c.get("enabled", False)).lower()))
+    print("wg_api_url="   + esc(c.get("api_url", "")))
+    print("wg_peer_name=" + esc(c.get("peer_name", "ppsa-server")))
+except Exception:
+    pass
+' 2>/dev/null)"
+    fi
+fi
+
+if [ "$wg_enabled" = "true" ] && [ -n "$wg_api_url" ]; then
+    echo "  Auto-registering with wg-easy at $wg_api_url as peer '$wg_peer_name'..."
+fi
+
 if [ -f "$PPSA_DIR/scripts/ppsa-wireguard-register.sh" ]; then
     chmod +x "$PPSA_DIR/scripts/ppsa-wireguard-register.sh"
-    # Run with timeout; registration should take <30s in normal cases.
-    timeout 60 "$PPSA_DIR/scripts/ppsa-wireguard-register.sh" || {
+    # The register script waits up to 120s internally (PPSA_WG_WAIT_TIMEOUT)
+    # for the wg-easy API to come up. The systemd service re-runs on every
+    # boot, so transient failures are self-healing. Outer timeout of 300s
+    # is just an absolute upper bound so install can't hang forever.
+    if timeout 300 "$PPSA_DIR/scripts/ppsa-wireguard-register.sh"; then
+        # Success: surface the assigned WG IP so it shows in the install log.
+        if [ -r /run/ppsa-wireguard-ip ]; then
+            wg_assigned_ip=$(cat /run/ppsa-wireguard-ip 2>/dev/null || true)
+            if [ -n "$wg_assigned_ip" ]; then
+                echo "  WireGuard connected: assigned IP $wg_assigned_ip (saved to /run/ppsa-wireguard-ip)"
+            fi
+        fi
+    else
         RC=$?
         if [ $RC -eq 124 ]; then
-            echo "  WireGuard registration timed out (will retry on next boot)"
+            echo "  WireGuard registration still in progress (timed out at 300s). Will retry on next boot via ppsa-wireguard-register.service."
         else
-            echo "  WireGuard registration skipped (rc=$RC). Can be retried via WebUI."
+            echo "  WireGuard registration skipped (rc=$RC). Will retry on next boot."
         fi
-    }
+    fi
 else
     echo "  ppsa-wireguard-register.sh not found, skipping"
 fi
