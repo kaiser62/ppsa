@@ -39,6 +39,12 @@ jobs:
               git \
               curl \
               xorriso \
+              isolinux \
+              syslinux-common \
+              syslinux-utils \
+              grub-efi-amd64-bin \
+              grub-pc-bin \
+              mtools \
               jq \
               gnupg
           # GitHub CLI is not in Debian repos; install from upstream

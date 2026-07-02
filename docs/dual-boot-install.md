@@ -34,13 +34,15 @@ offline use. No network is required at install time.
 ### Windows — Rufus
 
 1. Download Rufus from <https://rufus.ie/> (portable version is fine).
-2. Open Rufus.
-3. **Device**: select your USB drive (8 GB or larger is enough).
-4. **Boot selection**: click **SELECT** and pick the
-   `ppsa-installer-vX.Y.Z.iso.zst` file.
-5. **Partition scheme**: **GPT**.
-6. **Target system**: **UEFI (non CSM)**.
-7. Click **Start**. Confirm "Write in ISO image mode" if asked.
+2. Decompress the installer first:
+   `zstd -d ppsa-installer-vX.Y.Z.iso.zst -o ppsa-installer-vX.Y.Z.iso`
+3. Open Rufus.
+4. **Device**: select your USB drive (8 GB or larger is enough).
+5. **Boot selection**: click **SELECT** and pick the
+   `ppsa-installer-vX.Y.Z.iso` file.
+6. **Partition scheme**: **GPT**.
+7. **Target system**: **UEFI (non CSM)**.
+8. Click **Start**. If Rufus asks, choose **DD image mode**, not ISO image mode.
 
 The write takes about 1-2 minutes on a USB 3.0 drive.
 
