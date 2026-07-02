@@ -82,6 +82,42 @@ fi
 mkdir -p "$ROOTFS_DIR"
 mkdir -p "$BOOT_DIR"
 
+ensure_loop_partition_node() {
+    local loop_dev="$1"
+    local part_num="$2"
+    local part_dev="${loop_dev}p${part_num}"
+    local loop_name
+    loop_name="$(basename "$loop_dev")"
+
+    if [ -b "$part_dev" ]; then
+        echo "$part_dev"
+        return 0
+    fi
+
+    partprobe "$loop_dev" 2>/dev/null || true
+    partx -a "$loop_dev" 2>/dev/null || true
+    sleep 1
+
+    if [ -b "$part_dev" ]; then
+        echo "$part_dev"
+        return 0
+    fi
+
+    local sys_dev="/sys/class/block/${loop_name}p${part_num}/dev"
+    if [ -r "$sys_dev" ]; then
+        local major minor
+        IFS=: read -r major minor < "$sys_dev"
+        mknod "$part_dev" b "$major" "$minor" 2>/dev/null || true
+    fi
+
+    if [ ! -b "$part_dev" ]; then
+        echo "ERROR: loop partition device not available: $part_dev" >&2
+        return 1
+    fi
+
+    echo "$part_dev"
+}
+
 # =============================================================================
 # Allow skipping bootstrap via PPSA_SKIP_BOOTSTRAP (CI cache hit)
 # =============================================================================
@@ -533,6 +569,14 @@ echo "Chroot setup complete."
 CHROOTEOF
 
 chmod +x "$ROOTFS_DIR/tmp/setup.sh"
+
+# The chroot setup installs PPSA systemd units that live in /opt/ppsa/scripts.
+# Stage the scripts before running it; the full repo is copied again after the
+# chroot so cached rootfs builds still pick up every source change.
+mkdir -p "$ROOTFS_DIR/opt/ppsa"
+cp -a "$PPSA_SRC/scripts" "$ROOTFS_DIR/opt/ppsa/"
+chmod +x "$ROOTFS_DIR/opt/ppsa/scripts/"*.sh 2>/dev/null || true
+
 chroot "$ROOTFS_DIR" /bin/bash /tmp/setup.sh
 rm "$ROOTFS_DIR/tmp/setup.sh"
 
@@ -650,8 +694,8 @@ parted -s "$OUTPUT_IMG" mkpart primary ext4 "$((EFI_SIZE_MB + 1))MiB" 100%
 
 # Set up loop device
 LOOP_DEV=$(losetup -f --show -P "$OUTPUT_IMG")
-EFI_PART="${LOOP_DEV}p1"
-ROOT_PART="${LOOP_DEV}p2"
+EFI_PART=$(ensure_loop_partition_node "$LOOP_DEV" 1)
+ROOT_PART=$(ensure_loop_partition_node "$LOOP_DEV" 2)
 
 # Format partitions
 mkfs.fat -F 32 -n "PPSA_BOOT" "$EFI_PART"
