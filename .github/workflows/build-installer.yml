@@ -53,6 +53,7 @@ jobs:
               cpio \
               xz-utils \
               util-linux \
+              udev \
               zstd \
               ca-certificates \
               git \
