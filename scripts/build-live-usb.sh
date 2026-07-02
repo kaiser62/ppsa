@@ -781,6 +781,7 @@ LOADEREOF
 # single string with the modules space-separated. The Debian
 # trixie grub-mkstandalone doesn't split on commas, so we use the
 # space-separated form.
+mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
 grub-mkstandalone \
     --directory=/usr/lib/grub/x86_64-efi \
     --output="$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI" \
