@@ -492,6 +492,14 @@ install_partition() {
     mount --bind /dev "$m_dst_root/dev"  >>"$LOG" 2>&1
     mount --bind /proc "$m_dst_root/proc" >>"$LOG" 2>&1
     mount --bind /sys  "$m_dst_root/sys"  >>"$LOG" 2>&1
+    # Bind the new ESP at /boot/efi inside the chroot. Without this,
+    # grub-install and the loader files land in the hidden directory
+    # under the mountpoint on the root fs, and the machine boots the
+    # stale loader rsync'd from the source image - whose embedded root
+    # UUID belongs to the source image, not the new partition.
+    if ! mount --bind "$m_dst_esp" "$m_dst_root/boot/efi" >>"$LOG" 2>&1; then
+        log "WARNING: could not bind ESP at /boot/efi - loader files may land on the root fs"
+    fi
 
     if ! chroot "$m_dst_root" grub-install \
         --target=x86_64-efi \
@@ -502,17 +510,44 @@ install_partition() {
         log "WARNING: grub-install failed - booting may not work"
     fi
 
-    # Rebuild the fallback EFI binary as a self-contained grub-mkstandalone
-    # image so the new disk boots cleanly regardless of controller order.
-    # Same fix as build-live-usb.sh: curated list of modules, space
-    # separated (Debian trixie's grub-mkstandalone doesn't split on
-    # comma in --install-modules, so we use spaces). diskfilter is
-    # explicitly included since v1.1.17 missed it and (hd0) was visible
-    # but (hd0,gpt1/2) were not.
-    local new_root_uuid grub_modules
+    # Install the fallback EFI loader so the new disk boots cleanly
+    # regardless of controller order. Same fix as build-live-usb.sh.
+    #
+    # Preferred: Secure Boot chain from the signed packages bundled in the
+    # PPSA image (shim-signed / grub-efi-amd64-signed), removable-media
+    # layout: shim at EFI/BOOT/BOOTX64.EFI (Microsoft-signed), Debian-signed
+    # GRUB as grubx64.efi next to it, MokManager as mmx64.efi. fbx64.efi is
+    # deliberately omitted (it would try to write NVRAM entries). The signed
+    # GRUB core has prefix /EFI/debian baked in, resolved on its boot
+    # device, so EFI/debian/grub.cfg does the search-by-UUID redirect and
+    # the disk stays portable.
+    local new_root_uuid
     new_root_uuid=$(blkid -s UUID -o value "$new_root" 2>/dev/null)
-    log "Building portable EFI binary (root UUID: $new_root_uuid)"
-    cat > "$m_dst_root/tmp/grub-standalone.cfg" <<LOADEREOF
+    local shim_signed="$m_dst_root/usr/lib/shim/shimx64.efi.signed"
+    local mm_signed="$m_dst_root/usr/lib/shim/mmx64.efi.signed"
+    local grub_signed="$m_dst_root/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed"
+    mkdir -p "$m_dst_root/boot/efi/EFI/BOOT"
+    if [[ -f "$shim_signed" && -f "$grub_signed" ]]; then
+        log "Installing Secure Boot chain (shim + signed GRUB, root UUID: $new_root_uuid)"
+        cp "$shim_signed" "$m_dst_root/boot/efi/EFI/BOOT/BOOTX64.EFI"
+        cp "$grub_signed" "$m_dst_root/boot/efi/EFI/BOOT/grubx64.efi"
+        [[ -f "$mm_signed" ]] && cp "$mm_signed" "$m_dst_root/boot/efi/EFI/BOOT/mmx64.efi"
+        mkdir -p "$m_dst_root/boot/efi/EFI/debian"
+        cat > "$m_dst_root/boot/efi/EFI/debian/grub.cfg" <<LOADEREOF
+search --no-floppy --fs-uuid --set=root ${new_root_uuid}
+set prefix=(\$root)/boot/grub
+configfile (\$root)/boot/grub/grub.cfg
+LOADEREOF
+    else
+        # Fallback for bundled images that predate the signed packages:
+        # self-contained grub-mkstandalone image (unsigned - needs Secure
+        # Boot disabled). Curated space-separated module list (trixie's
+        # grub-mkstandalone doesn't split on commas); diskfilter explicit
+        # since v1.1.17 missed it and (hd0) was visible but (hd0,gpt1/2)
+        # were not.
+        local grub_modules
+        log "Signed shim/GRUB not in image - building unsigned portable EFI binary (root UUID: $new_root_uuid)"
+        cat > "$m_dst_root/tmp/grub-standalone.cfg" <<LOADEREOF
 # Point prefix at the embedded memdisk so insmod can find the modules.
 # Then load part_gpt/part_msdos (so the disk's partition table is
 # readable) and search (so we can find the root by UUID). Only THEN
@@ -528,20 +563,22 @@ search --no-floppy --fs-uuid --set=root ${new_root_uuid}
 set prefix=(\$root)/boot/grub
 configfile (\$root)/boot/grub/grub.cfg
 LOADEREOF
-    grub_modules="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 btrfs xfs all_video gfxterm font diskfilter ahci ata usb ohci ehci uhci gettext serial terminal linux16 reboot"
-    if ! chroot "$m_dst_root" grub-mkstandalone \
-        --directory=/usr/lib/grub/x86_64-efi \
-        --output=/boot/efi/EFI/BOOT/BOOTX64.EFI \
-        --format=x86_64-efi \
-        --compress=xz \
-        --install-modules="$grub_modules" \
-        "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" >>"$LOG" 2>&1; then
-        log "WARNING: grub-mkstandalone failed - falling back to grub-install output"
+        grub_modules="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 btrfs xfs all_video gfxterm font diskfilter ahci ata usb ohci ehci uhci gettext serial terminal linux16 reboot"
+        if ! chroot "$m_dst_root" grub-mkstandalone \
+            --directory=/usr/lib/grub/x86_64-efi \
+            --output=/boot/efi/EFI/BOOT/BOOTX64.EFI \
+            --format=x86_64-efi \
+            --compress=xz \
+            --install-modules="$grub_modules" \
+            "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" >>"$LOG" 2>&1; then
+            log "WARNING: grub-mkstandalone failed - falling back to grub-install output"
+        fi
+        rm -f "$m_dst_root/tmp/grub-standalone.cfg"
     fi
-    rm -f "$m_dst_root/tmp/grub-standalone.cfg"
 
     # 12. Cleanup
     log "Cleaning up mounts"
+    umount "$m_dst_root/boot/efi" 2>/dev/null || true
     umount "$m_dst_root/sys"  2>/dev/null || true
     umount "$m_dst_root/proc" 2>/dev/null || true
     umount "$m_dst_root/dev"  2>/dev/null || true
