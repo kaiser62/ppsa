@@ -16,7 +16,7 @@ on:
         description: 'Raw PPSA seed image size to bundle in the installer ISO'
         required: false
         type: string
-        default: '4096'
+        default: '6144'
 
 permissions:
   contents: write
@@ -71,7 +71,7 @@ jobs:
 
       - name: Build compact PPSA seed image
         env:
-          TMPDIR: ${{ runner.temp }}
+          TMPDIR: /tmp
           PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
           PPSA_SKIP_BOOTSTRAP: ${{ steps.cache-rootfs.outputs.cache-hit == 'true' && '1' || '' }}
         run: |
