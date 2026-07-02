@@ -12,6 +12,11 @@ on:
         required: false
         type: boolean
         default: false
+      seed_image_size_mb:
+        description: 'Raw PPSA seed image size to bundle in the installer ISO'
+        required: false
+        type: string
+        default: '4096'
 
 permissions:
   contents: write
@@ -27,13 +32,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache rootfs
+        id: cache-rootfs
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ppsa-rootfs-cache.tar.gz
+          key: ppsa-installer-rootfs-${{ hashFiles('scripts/**/*.sh', 'compose/**', 'docker/**', '.github/workflows/build-installer.yml') }}-v1
+
       - name: Install build dependencies
         run: |
           set -e
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
               live-build \
+              debootstrap \
+              parted \
+              e2fsprogs \
+              dosfstools \
               rsync \
+              cpio \
+              xz-utils \
+              util-linux \
               zstd \
               ca-certificates \
               git \
@@ -47,33 +66,30 @@ jobs:
               mtools \
               jq \
               gnupg
-          # GitHub CLI is not in Debian repos; install from upstream
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-              -o /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-              > /etc/apt/sources.list.d/github-cli.list
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gh
           rm -rf /var/lib/apt/lists/*
           lb --version
-          gh --version
 
-      - name: Fetch PPSA USB image from release
+      - name: Build compact PPSA seed image
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TMPDIR: ${{ runner.temp }}
+          PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
+          PPSA_SKIP_BOOTSTRAP: ${{ steps.cache-rootfs.outputs.cache-hit == 'true' && '1' || '' }}
         run: |
           set -e
           mkdir -p installer/config/includes.binary/ppsa
           cd installer/config/includes.binary/ppsa
 
           VERSION="${{ inputs.version }}"
+          SIZE_MB="${{ inputs.seed_image_size_mb }}"
 
-          # gh release download resolves the synthetic "untagged-..." URL automatically.
-          gh release download "$VERSION" \
-              --repo kaiser62/ppsa \
-              --pattern "ppsa-usb-${VERSION}.img.zst" \
-              --pattern "ppsa-usb-${VERSION}.img.zst.sha256" \
-              --dir .
+          cd ../../../..
+          bash scripts/build-live-usb.sh \
+              --output "installer/config/includes.binary/ppsa/ppsa-usb-${VERSION}.img" \
+              --size "${SIZE_MB}"
+
+          cd installer/config/includes.binary/ppsa
+          zstd -T0 -19 --rm "ppsa-usb-${VERSION}.img"
+          sha256sum "ppsa-usb-${VERSION}.img.zst" > "ppsa-usb-${VERSION}.img.zst.sha256"
           ls -la
           sha256sum -c "ppsa-usb-${VERSION}.img.zst.sha256"
 

@@ -26,8 +26,10 @@ installer assets are named:
 - `ppsa-installer-vX.Y.Z.iso.zst`  (~1.2 GB, includes the bundled PPSA image)
 - `ppsa-installer-vX.Y.Z.iso.zst.sha256`
 
-The PPSA image is **bundled inside the installer ISO** for fully
-offline use. No network is required at install time.
+The installer bundles a compact PPSA seed image for fully offline use.
+No network is required at install time. The installed PPSA root partition
+is expanded to the selected disk or partition during install and again on
+first boot if needed.
 
 ## 2. Write the ISO to a USB
 
