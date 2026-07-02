@@ -145,9 +145,18 @@ To uninstall PPSA:
 ## 7. Troubleshooting
 
 ### F12 doesn't show the USB
-- Some firmwares hide USB boot in "Secure Boot" settings. Try
-  disabling Secure Boot, or enable "Legacy Boot" / "CSM".
 - Make sure the USB is plugged in before POST, not after.
+- PPSA boots with Secure Boot **enabled** (it ships Debian's
+  Microsoft-signed shim + signed GRUB). If your firmware still
+  refuses it — some older or vendor-locked firmware only trusts
+  its own keys — disable Secure Boot or enable "Legacy Boot" /
+  "CSM" as a fallback.
+
+### "Secure Boot violation" on boot
+- Current images boot with Secure Boot enabled. If you see a
+  violation with an older image (built before the signed shim/GRUB
+  chain was added), either update to the latest release or disable
+  Secure Boot in firmware setup.
 
 ### Installer shows no candidate drives
 - Plug in your target drive after the installer boots. Press `r`

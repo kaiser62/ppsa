@@ -28,7 +28,8 @@ host disk, no operating system required on the host.
 - **UFW firewall** with fail2ban — only SSH and WebUI ports open
 - **WireGuard tunnel** to your own Oracle Cloud VPS for external access (optional)
 - **8 CPU / 8 GB RAM recommended** for the host (4 GB / 4 CPU minimum)
-- **Works on BIOS or UEFI** systems (GRUB dual-install)
+- **Works on BIOS or UEFI** systems (GRUB dual-install), including
+  **UEFI Secure Boot** (Microsoft-signed shim + Debian-signed GRUB)
 
 ---
 

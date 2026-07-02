@@ -207,8 +207,16 @@ apt-get update -qq
 apt-get install -y -qq linux-image-amd64 firmware-linux firmware-linux-nonfree firmware-iwlwifi firmware-atheros firmware-realtek firmware-brcm80211 firmware-misc-nonfree
 # Skip linux-headers: server doesn't compile kernel modules.
 
-# GRUB bootloader - install tools in image for maintenance
-apt-get install -y -qq grub2-common
+# GRUB bootloader - install tools in image for maintenance, plus the
+# Secure Boot chain: shim-signed (Microsoft-signed first-stage loader),
+# shim-helpers-amd64-signed (MokManager mmx64.efi), and
+# grub-efi-amd64-signed (Debian-signed monolithic GRUB core). The image
+# build copies these prebuilt binaries onto the ESP so the appliance
+# boots with Secure Boot enabled — no MOK enrollment needed, shim is
+# trusted by the Microsoft 3rd-party UEFI CA present in stock firmware.
+# grub-efi-amd64-bin satisfies grub-efi-amd64-signed's dependency without
+# pulling grub-efi-amd64 (whose postinst wants a real install device).
+apt-get install -y -qq grub2-common grub-efi-amd64-bin shim-signed shim-helpers-amd64-signed grub-efi-amd64-signed
 
 # Docker (compose plugin is a separate binary, not yet packaged in Trixie)
 apt-get install -y -qq docker.io containerd
@@ -723,7 +731,7 @@ mount --bind /dev "$MOUNT_DIR/dev"
 mount --bind /proc "$MOUNT_DIR/proc"
 mount --bind /sys "$MOUNT_DIR/sys"
 
-# UEFI: install to the ESP with a portable EFI binary.
+# UEFI: install to the ESP with a portable, Secure-Boot-capable chain.
 #
 # The plain `grub-install --removable` flow embeds a device+path in the
 # EFI binary's prefix. That prefix is correct for the build host, but
@@ -731,35 +739,63 @@ mount --bind /sys "$MOUNT_DIR/sys"
 # different controller order, or just a different geometry): GRUB drops
 # to rescue shell because (hd0,gpt2)/boot/grub no longer exists.
 #
-# Fix: run grub-install to populate the ESP modules, then rebuild the
-# fallback EFI binary at /EFI/BOOT/BOOTX64.EFI as a self-contained
-# `grub-mkstandalone` image. The embedded loader uses `search` to find
-# the root partition by UUID, so it boots cleanly on any disk layout
-# the image gets written to.
+# grub-install still runs first to populate /boot/grub (modules, fonts,
+# grubenv) for non-Secure-Boot boots and on-device maintenance.
 grub-install --target=x86_64-efi \
     --efi-directory="$MOUNT_DIR/boot/efi" \
     --boot-directory="$MOUNT_DIR/boot" \
     --recheck \
     --no-nvram 2>&1
 
-# Build a self-contained EFI binary that uses search to find the root.
-# The previous attempts:
-#   v1.1.17 used a curated install-modules list - part_gpt and friends
-#     weren't actually loaded, so (hd0) was visible but (hd0,gpt1/2)
-#     were not, and search-by-UUID found nothing.
-#   v1.1.18 attempt with "all" - failed because all.mod isn't built
-#     in the debootstrap chroot.
-#   v1.1.18 second attempt with dynamic enumeration of all .mod
-#     files - grub-mkstandalone treated the entire comma-separated
-#     list as a single module name (Debian trixie's grub-mkstandalone
-#     doesn't split on comma in --install-modules).
-# Fix: use a curated list of modules that covers everything the EFI
-# binary needs, with diskfilter explicitly included. The list is
-# passed as a single string but each module name is space-separated
-# (grub-mkstandalone's actual format - commas don't work here).
-GRUB_MODULES="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 btrfs xfs all_video gfxterm font diskfilter ahci ata usb ohci ehci uhci gettext serial terminal linux16 reboot"
+# Secure Boot chain (primary): copy Debian's prebuilt signed binaries onto
+# the ESP using the removable-media layout that Debian/Ubuntu live ISOs use:
+#   EFI/BOOT/BOOTX64.EFI  = shim (Microsoft-signed; firmware trusts it)
+#   EFI/BOOT/grubx64.efi  = Debian-signed monolithic GRUB (verified by shim)
+#   EFI/BOOT/mmx64.efi    = MokManager (shim falls back to it on failure)
+# fbx64.efi is deliberately NOT copied: with it present, shim tries to
+# create NVRAM boot entries from BOOT.CSV, which is wrong for removable
+# media and can reboot-loop. Without it, shim chainloads grubx64.efi.
+#
+# The signed GRUB core has prefix /EFI/debian baked in (verified via
+# strings on trixie's grubx64.efi.signed), resolved relative to the device
+# it booted from — so it reads EFI/debian/grub.cfg from OUR ESP no matter
+# what disk the image was dd'd to. That file does the same search-by-UUID
+# redirect the old standalone loader embedded, keeping full portability.
+# GRUB configs are not signature-checked (only shim/GRUB/kernel binaries
+# are), so the redirect works identically under Secure Boot.
+SHIM_SIGNED="$MOUNT_DIR/usr/lib/shim/shimx64.efi.signed"
+MM_SIGNED="$MOUNT_DIR/usr/lib/shim/mmx64.efi.signed"
+GRUB_SIGNED="$MOUNT_DIR/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed"
 
-cat > /tmp/grub-standalone.cfg <<LOADEREOF
+mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
+if [ -f "$SHIM_SIGNED" ] && [ -f "$GRUB_SIGNED" ]; then
+    cp "$SHIM_SIGNED" "$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI"
+    cp "$GRUB_SIGNED" "$MOUNT_DIR/boot/efi/EFI/BOOT/grubx64.efi"
+    if [ -f "$MM_SIGNED" ]; then
+        cp "$MM_SIGNED" "$MOUNT_DIR/boot/efi/EFI/BOOT/mmx64.efi"
+    fi
+
+    # Early config at the signed GRUB's baked-in prefix. No insmod needed:
+    # the signed core has search/part_gpt/ext2/configfile etc. built in
+    # (and under Secure Boot, loading .mod files from disk is blocked
+    # anyway - everything the menu needs must be, and is, built in).
+    mkdir -p "$MOUNT_DIR/boot/efi/EFI/debian"
+    cat > "$MOUNT_DIR/boot/efi/EFI/debian/grub.cfg" <<LOADEREOF
+search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+set prefix=(\$root)/boot/grub
+configfile (\$root)/boot/grub/grub.cfg
+LOADEREOF
+    echo "GRUB (UEFI) Secure Boot chain installed (shim + signed GRUB, portable)."
+else
+    # Fallback (signed packages unavailable): self-contained unsigned
+    # grub-mkstandalone image. Boots fine with Secure Boot disabled.
+    # Curated module list, space-separated - Debian trixie's
+    # grub-mkstandalone doesn't split on commas in --install-modules,
+    # and diskfilter must be explicit or (hd0,gptN) stays invisible.
+    echo "WARNING: signed shim/GRUB not found in rootfs - building unsigned loader (Secure Boot must be disabled to boot this image)."
+    GRUB_MODULES="linux normal search configfile ls echo cat test true regexp part_gpt part_msdos fat ext2 btrfs xfs all_video gfxterm font diskfilter ahci ata usb ohci ehci uhci gettext serial terminal linux16 reboot"
+
+    cat > /tmp/grub-standalone.cfg <<LOADEREOF
 # Point prefix at the embedded memdisk so insmod can find the modules.
 # Then load part_gpt/part_msdos (so the disk's partition table is
 # readable) and search (so we can find the root by UUID). Only THEN
@@ -776,21 +812,16 @@ set prefix=(\$root)/boot/grub
 configfile (\$root)/boot/grub/grub.cfg
 LOADEREOF
 
-# grub-mkstandalone expects --install-modules= as either a single
-# module name (used multiple times via separate flags) OR as a
-# single string with the modules space-separated. The Debian
-# trixie grub-mkstandalone doesn't split on commas, so we use the
-# space-separated form.
-mkdir -p "$MOUNT_DIR/boot/efi/EFI/BOOT"
-grub-mkstandalone \
-    --directory=/usr/lib/grub/x86_64-efi \
-    --output="$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI" \
-    --format=x86_64-efi \
-    --compress=xz \
-    --install-modules="$GRUB_MODULES" \
-    "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" 2>&1
-rm -f /tmp/grub-standalone.cfg
-echo "GRUB (UEFI) standalone EFI binary built (curated module list, portable)."
+    grub-mkstandalone \
+        --directory=/usr/lib/grub/x86_64-efi \
+        --output="$MOUNT_DIR/boot/efi/EFI/BOOT/BOOTX64.EFI" \
+        --format=x86_64-efi \
+        --compress=xz \
+        --install-modules="$GRUB_MODULES" \
+        "boot/grub/grub.cfg=/tmp/grub-standalone.cfg" 2>&1
+    rm -f /tmp/grub-standalone.cfg
+    echo "GRUB (UEFI) standalone EFI binary built (curated module list, portable)."
+fi
 
 # BIOS: optional - requires a bios_grub partition on GPT disks.
 # Skip if not available; UEFI is the primary boot path.
