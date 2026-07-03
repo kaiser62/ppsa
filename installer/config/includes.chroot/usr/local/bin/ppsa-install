@@ -325,6 +325,19 @@ install_disk() {
         log "WARNING: resize2fs failed"
     fi
     sync
+
+    # Register a firmware boot entry (best-effort). The image ESP always
+    # carries EFI/BOOT/BOOTX64.EFI (shim on Secure-Boot-capable images),
+    # so point the entry at the fallback loader.
+    if command -v efibootmgr >/dev/null 2>&1; then
+        if efibootmgr -c -d "$dev" -p 1 -L "PPSA" \
+            -l '\EFI\BOOT\BOOTX64.EFI' >>"$LOG" 2>&1; then
+            log "Firmware boot entry 'PPSA' created (\\EFI\\BOOT\\BOOTX64.EFI)"
+        else
+            log "WARNING: could not create firmware boot entry - use the firmware's disk fallback entry"
+        fi
+    fi
+
     log "Whole-disk install complete"
     return 0
 }
@@ -556,6 +569,30 @@ search --no-floppy --fs-uuid --set=root ${new_root_uuid}
 set prefix=(\$root)/boot/grub
 configfile (\$root)/boot/grub/grub.cfg
 LOADEREOF
+        # Also populate EFI/debian with the signed set. grub-install above
+        # left an UNSIGNED locally-built core at EFI/debian/grubx64.efi
+        # (and the ESP rsync may have carried a stale one from the image);
+        # a firmware boot-menu entry pointing into EFI/debian would hit it
+        # and throw a Secure Boot violation even though EFI/BOOT is signed.
+        cp "$shim_signed" "$m_dst_root/boot/efi/EFI/debian/shimx64.efi"
+        cp "$grub_signed" "$m_dst_root/boot/efi/EFI/debian/grubx64.efi"
+        [[ -f "$mm_signed" ]] && cp "$mm_signed" "$m_dst_root/boot/efi/EFI/debian/mmx64.efi"
+
+        # Register a firmware boot entry for the installed system, pointing
+        # at shim (the only loader the firmware itself will accept under
+        # Secure Boot). Unlike the image build, the live installer runs on
+        # real UEFI with efivars available. Best-effort: some firmware
+        # blocks runtime variable writes.
+        if command -v efibootmgr >/dev/null 2>&1; then
+            if efibootmgr -c -d "$disk" -p "$pnum" -L "PPSA" \
+                -l '\EFI\debian\shimx64.efi' >>"$LOG" 2>&1; then
+                log "Firmware boot entry 'PPSA' created (\\EFI\\debian\\shimx64.efi)"
+            else
+                log "WARNING: could not create firmware boot entry - use the firmware's disk fallback entry"
+            fi
+        else
+            log "NOTE: efibootmgr not available - no firmware boot entry created (disk fallback entry will be used)"
+        fi
     else
         # Fallback for bundled images that predate the signed packages:
         # self-contained grub-mkstandalone image (unsigned - needs Secure

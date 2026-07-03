@@ -785,6 +785,18 @@ search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
 set prefix=(\$root)/boot/grub
 configfile (\$root)/boot/grub/grub.cfg
 LOADEREOF
+
+    # Also populate EFI/debian with the signed set. grub-install above put
+    # an UNSIGNED locally-built core at EFI/debian/grubx64.efi; firmware
+    # boot-menu entries (or stale "debian" NVRAM entries from an earlier
+    # install) that point into EFI/debian would hit it and throw a Secure
+    # Boot violation even though the EFI/BOOT fallback path is signed.
+    # Standard Debian layout: shimx64.efi (entry point) + signed grubx64.
+    cp "$SHIM_SIGNED" "$MOUNT_DIR/boot/efi/EFI/debian/shimx64.efi"
+    cp "$GRUB_SIGNED" "$MOUNT_DIR/boot/efi/EFI/debian/grubx64.efi"
+    if [ -f "$MM_SIGNED" ]; then
+        cp "$MM_SIGNED" "$MOUNT_DIR/boot/efi/EFI/debian/mmx64.efi"
+    fi
     echo "GRUB (UEFI) Secure Boot chain installed (shim + signed GRUB, portable)."
 else
     # Fallback (signed packages unavailable): self-contained unsigned

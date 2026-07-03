@@ -43,3 +43,4 @@ sdparm
 dmidecode
 acpid
 openssh-client
+efibootmgr
