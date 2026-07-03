@@ -114,10 +114,12 @@ Log file:       /var/log/ppsa-installer.log
 1. Press Enter to return to the shell.
 2. Type `reboot` and press Enter.
 3. At POST, press **F12** again.
-4. In the boot menu, select the disk that now holds PPSA
-   (look for the model name shown in step 4).
-5. PPSA boots from `/EFI/BOOT/BOOTX64.EFI` on the new ESP. You do
-   not need to enable anything in UEFI Setup.
+4. In the boot menu, select the **PPSA** entry the installer
+   registered (or, if your firmware hides it, the disk that now
+   holds PPSA — look for the model name shown in step 4).
+5. PPSA boots through Debian's signed shim (`\EFI\debian\shimx64.efi`
+   via the PPSA entry, or `/EFI/BOOT/BOOTX64.EFI` via the disk
+   fallback). You do not need to enable anything in UEFI Setup.
 
 PPSA's first boot runs `install.sh` and pulls Docker images. This
 takes **2-5 minutes** depending on network speed. After that:
@@ -157,6 +159,12 @@ To uninstall PPSA:
   violation with an older image (built before the signed shim/GRUB
   chain was added), either update to the latest release or disable
   Secure Boot in firmware setup.
+- If the installer **ISO** boots fine but the **installed system's**
+  boot-menu entry throws the violation, the system was installed
+  with an older installer that wrote an unsigned loader (or an
+  unsigned `EFI/debian/grubx64.efi`). Re-run the install with the
+  current installer ISO — it writes signed loaders on every ESP
+  path and registers a `PPSA` boot entry that points at shim.
 
 ### Installer shows no candidate drives
 - Plug in your target drive after the installer boots. Press `r`
@@ -181,9 +189,10 @@ To uninstall PPSA:
 
 ## Notes
 
-- The installer uses `--removable` for GRUB, so the ESP always
-  has `/EFI/BOOT/BOOTX64.EFI` — the F12 fallback path. No UEFI
-  NVRAM entries are written.
+- The ESP always has `/EFI/BOOT/BOOTX64.EFI` (shim) — the F12
+  fallback path — plus the signed set under `/EFI/debian`. The
+  installer also registers a `PPSA` UEFI boot entry pointing at
+  shim (best-effort; the fallback path works without it).
 - The bundled PPSA image is the same one used for the main
   PPSA VDI/IMG releases. No custom build, no surprises.
 - The installer ISO is rebuilt only on `workflow_dispatch`. It
