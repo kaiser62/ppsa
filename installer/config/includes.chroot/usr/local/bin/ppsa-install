@@ -484,6 +484,21 @@ install_partition() {
         log "WARNING: no /etc/fstab in target root - leaving as-is"
     fi
 
+    # 10b. Update /boot/grub/grub.cfg with the new root UUID. The config
+    # was rsync'd from the source image, so every menuentry's search line
+    # and root=UUID= kernel argument still point at the SOURCE image's
+    # root UUID - the installed system drops to an initramfs shell with
+    # "UUID=... does not exist" otherwise.
+    local src_root_uuid grub_cfg
+    src_root_uuid=$(blkid -s UUID -o value "$src_root" 2>/dev/null)
+    grub_cfg="$m_dst_root/boot/grub/grub.cfg"
+    if [[ -f "$grub_cfg" && -n "$src_root_uuid" && -n "$root_uuid" ]]; then
+        sed -i "s/${src_root_uuid}/${root_uuid}/g" "$grub_cfg"
+        log "grub.cfg root UUID updated: $src_root_uuid -> $root_uuid"
+    else
+        log "WARNING: could not update root UUID in grub.cfg (missing file or UUID)"
+    fi
+
     # 11. Install GRUB to the new ESP
     # Same fix as the PPSA image build: build a self-contained EFI binary
     # that uses search to find the root by UUID. Plain grub-install embeds
