@@ -402,14 +402,17 @@ install_partition() {
     fi
     log "New partitions: ESP=$new_esp root=$new_root"
 
-    # 5. Format
-    log "Formatting ESP $new_esp as FAT32"
-    if ! mkfs.fat -F32 "$new_esp" >>"$LOG" 2>&1; then
+    # 5. Format. Labels must match the PPSA image convention: its
+    # /etc/fstab mounts by LABEL=PPSA_ROOT / LABEL=PPSA_BOOT, so an
+    # unlabeled ESP/root leaves the installed system in emergency mode
+    # waiting for /dev/disk/by-label/PPSA_BOOT.
+    log "Formatting ESP $new_esp as FAT32 (label PPSA_BOOT)"
+    if ! mkfs.fat -F32 -n PPSA_BOOT "$new_esp" >>"$LOG" 2>&1; then
         die "Could not format ESP"
         return 1
     fi
-    log "Formatting root $new_root as ext4"
-    if ! mkfs.ext4 -F "$new_root" >>"$LOG" 2>&1; then
+    log "Formatting root $new_root as ext4 (label PPSA_ROOT)"
+    if ! mkfs.ext4 -F -L PPSA_ROOT "$new_root" >>"$LOG" 2>&1; then
         die "Could not format root"
         return 1
     fi
