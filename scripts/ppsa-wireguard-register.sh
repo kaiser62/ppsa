@@ -368,12 +368,21 @@ if grep -qE '^Endpoint = ' "${WG_CONF}"; then
     log "Endpoint in ${WG_CONF} set to ${PUBLIC_WG_ENDPOINT} (wg-easy default hostname bypassed, no DNS needed)"
 fi
 
-# Wait up to $2 seconds for a wg handshake on $1. Returns 0 on handshake.
+# Wait up to $2 seconds for a FRESH wg handshake on $1. Returns 0 on
+# handshake. Freshness matters: after `wg syncconf` (endpoint switch on a
+# live interface) the kernel keeps the previous session's handshake
+# timestamp, so a bare != 0 check reports success for a dead endpoint.
+# With persistent-keepalive 25s a healthy tunnel re-handshakes well
+# within 35s; anything older is a previous session.
 wait_for_handshake() {
-    local iface="$1" max="$2" waited=0 hs
+    local iface="$1" max="$2" waited=0 hs now age
     while (( waited < max )); do
         hs=$(wg show "${iface}" latest-handshakes 2>/dev/null | awk '{print $2}' | head -1 || echo 0)
-        [[ -n "${hs}" && "${hs}" != "0" ]] && return 0
+        if [[ -n "${hs}" && "${hs}" != "0" ]]; then
+            now=$(date +%s)
+            age=$(( now - hs ))
+            (( age <= 35 )) && return 0
+        fi
         sleep 3
         waited=$(( waited + 3 ))
     done
