@@ -415,30 +415,22 @@ fi
 mkdir -p /etc/ppsa
 chmod 755 /etc/ppsa
 if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PPSA_WG_API_PASS:-}" ]; then
-    if [ -n "${PPSA_WG_PREFERRED_IP:-}" ]; then
-        cat > /etc/ppsa/wireguard.json <<WGEOF
+    # Empty optional values are fine: the register script treats "" as unset.
+    # lan_endpoint/public_endpoint feed the runtime handshake-verified
+    # endpoint fallback (public first, LAN if the public one stays silent).
+    cat > /etc/ppsa/wireguard.json <<WGEOF
 {
   "enabled": true,
   "api_url": "${PPSA_WG_API_URL}",
   "api_user": "${PPSA_WG_API_USER}",
   "api_password": "${PPSA_WG_API_PASS}",
   "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}",
-  "preferred_ip": "${PPSA_WG_PREFERRED_IP}"
+  "preferred_ip": "${PPSA_WG_PREFERRED_IP:-}",
+  "lan_endpoint": "${PPSA_WG_LAN_ENDPOINT:-}",
+  "public_endpoint": "${PPSA_WG_PUBLIC_ENDPOINT:-}"
 }
 WGEOF
-        echo "PPSA WireGuard config: baked in (peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: ${PPSA_WG_PREFERRED_IP})"
-    else
-        cat > /etc/ppsa/wireguard.json <<WGEOF
-{
-  "enabled": true,
-  "api_url": "${PPSA_WG_API_URL}",
-  "api_user": "${PPSA_WG_API_USER}",
-  "api_password": "${PPSA_WG_API_PASS}",
-  "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}"
-}
-WGEOF
-        echo "PPSA WireGuard config: baked in (peer: ${PPSA_WG_PEER_NAME:-ppsa-server})"
-    fi
+    echo "PPSA WireGuard config: baked in (peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: '${PPSA_WG_PREFERRED_IP:-}', lan_endpoint: '${PPSA_WG_LAN_ENDPOINT:-}', public_endpoint: '${PPSA_WG_PUBLIC_ENDPOINT:-}')"
     chmod 600 /etc/ppsa/wireguard.json
 else
     cat > /etc/ppsa/wireguard.json <<WGEOF

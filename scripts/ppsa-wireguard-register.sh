@@ -117,6 +117,8 @@ try:
         out.write('API_PASS=' + repr(c.get('api_password', '')) + '\n')
         out.write('PEER_NAME=' + repr(c.get('peer_name', '')) + '\n')
         out.write('PREFERRED_IP=' + repr(c.get('preferred_ip', '')) + '\n')
+        out.write('CFG_LAN_ENDPOINT=' + repr(c.get('lan_endpoint', '')) + '\n')
+        out.write('CFG_PUBLIC_ENDPOINT=' + repr(c.get('public_endpoint', '')) + '\n')
         out.write('ENABLED=' + repr(str(c.get('enabled', False)).lower()) + '\n')
 except Exception as e:
     sys.stderr.write('JSON parse error: ' + str(e) + '\n')
@@ -138,6 +140,8 @@ else
     API_PASS=$(grep -oP '"api_password"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
     PEER_NAME=$(grep -oP '"peer_name"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
     PREFERRED_IP=$(grep -oP '"preferred_ip"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
+    CFG_LAN_ENDPOINT=$(grep -oP '"lan_endpoint"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
+    CFG_PUBLIC_ENDPOINT=$(grep -oP '"public_endpoint"\s*:\s*"\K[^"]+' "${CONFIG_FILE}" 2>/dev/null || true)
     ENABLED=$(grep -oP '"enabled"\s*:\s*\K(true|false)' "${CONFIG_FILE}" 2>/dev/null || true)
 fi
 
@@ -341,27 +345,40 @@ fi
 chmod 600 "${WG_CONF}"
 log "Configuration saved to ${WG_CONF}"
 
-# Override the wg-easy default endpoint with the public IP of the
-# wg-easy server. The wg-easy config hands out the public hostname
-# (pleaseee.eu.org) which requires DNS resolution at wg-quick bring-up
-# time. Using the IP directly bypasses that dependency entirely. The
-# PPSA can be in any network and the wg handshake works.
+# Override the wg-easy default endpoint with a direct IP. The wg-easy
+# config hands out the public hostname (pleaseee.eu.org) which requires
+# DNS resolution at wg-quick bring-up time; a raw IP bypasses that.
 #
-# Why this works in both test and production:
-# - Test VM on LAN:           public IP is reachable (NAT/firewall allows)
-# - Production remote PPSA:   public IP is reachable (typical)
-# - Edge case (no public net): falls back to the wg-easy default
+# Endpoint candidates, in order:
+#   1. public_endpoint (config) / PPSA_WG_PUBLIC_ENDPOINT (env) - right
+#      for the normal remote deployment (PPSA behind some other NAT).
+#   2. lan_endpoint (config) / PPSA_WG_LAN_ENDPOINT (env) - fallback for
+#      a PPSA sitting in the SAME LAN as wg-easy, where hairpin NAT via
+#      the public IP is unreliable on many routers.
 #
-# v1.1.25: replaced the previous LAN/public TCP-probe fallback
-# (broken - tested TCP not UDP). wg-quick only needs UDP reachability.
-# Override is unconditional; the wg-easy default is only used if the
-# public IP rewrite is not set.
-PUBLIC_WG_ENDPOINT="${PPSA_WG_PUBLIC_ENDPOINT:-118.179.74.23:51830}"
+# v1.1.25 removed a TCP-probe based LAN/public picker (probed TCP, but
+# WireGuard is UDP - wrong signal). This version uses the only real
+# signal there is: bring wg0 up and check for an actual handshake,
+# falling back to the LAN endpoint if the public one stays silent.
+PUBLIC_WG_ENDPOINT="${PPSA_WG_PUBLIC_ENDPOINT:-${CFG_PUBLIC_ENDPOINT:-118.179.74.23:51830}}"
+LAN_WG_ENDPOINT="${PPSA_WG_LAN_ENDPOINT:-${CFG_LAN_ENDPOINT:-}}"
 if grep -qE '^Endpoint = ' "${WG_CONF}"; then
     sed -i "s|^Endpoint = .*\$|Endpoint = ${PUBLIC_WG_ENDPOINT}|" "${WG_CONF}"
     chmod 600 "${WG_CONF}"
-    log "Endpoint in ${WG_CONF} overridden to ${PUBLIC_WG_ENDPOINT} (wg-easy default hostname bypassed, no DNS needed)"
+    log "Endpoint in ${WG_CONF} set to ${PUBLIC_WG_ENDPOINT} (wg-easy default hostname bypassed, no DNS needed)"
 fi
+
+# Wait up to $2 seconds for a wg handshake on $1. Returns 0 on handshake.
+wait_for_handshake() {
+    local iface="$1" max="$2" waited=0 hs
+    while (( waited < max )); do
+        hs=$(wg show "${iface}" latest-handshakes 2>/dev/null | awk '{print $2}' | head -1 || echo 0)
+        [[ -n "${hs}" && "${hs}" != "0" ]] && return 0
+        sleep 3
+        waited=$(( waited + 3 ))
+    done
+    return 1
+}
 
 # ============================================================================
 # 7. Bring up the interface
@@ -401,12 +418,25 @@ if [[ -n "${ASSIGNED_IP}" ]]; then
 fi
 
 # ============================================================================
-# 10. Verify handshake
+# 10. Verify handshake; fall back to the LAN endpoint if public is silent
 # ============================================================================
-sleep 2
-HANDSHAKE=$(wg show "${WG_INTERFACE}" latest-handshakes 2>/dev/null | awk '{print $2}' | head -1 || echo "0")
-if [[ "${HANDSHAKE}" != "0" ]]; then
-    log "WireGuard handshake successful (peer is reachable)"
+if wait_for_handshake "${WG_INTERFACE}" 21; then
+    log "WireGuard handshake successful via ${PUBLIC_WG_ENDPOINT}"
+elif [[ -n "${LAN_WG_ENDPOINT}" ]]; then
+    log "No handshake via ${PUBLIC_WG_ENDPOINT}; trying LAN endpoint ${LAN_WG_ENDPOINT}"
+    PEER_PUBKEY=$(wg show "${WG_INTERFACE}" peers 2>/dev/null | head -1 || true)
+    if [[ -n "${PEER_PUBKEY}" ]]; then
+        wg set "${WG_INTERFACE}" peer "${PEER_PUBKEY}" endpoint "${LAN_WG_ENDPOINT}" || \
+            log "WARN: could not switch endpoint at runtime"
+        if wait_for_handshake "${WG_INTERFACE}" 21; then
+            log "WireGuard handshake successful via LAN endpoint ${LAN_WG_ENDPOINT}"
+            # Persist the working endpoint so wg-quick@wg0 uses it on the
+            # next boot without waiting for this service to re-run.
+            sed -i "s|^Endpoint = .*\$|Endpoint = ${LAN_WG_ENDPOINT}|" "${WG_CONF}"
+        else
+            log "WARN: No handshake via public or LAN endpoint (server side down or unreachable)"
+        fi
+    fi
 else
     log "WARN: No handshake yet (peer might not be connected from the other side)"
 fi
