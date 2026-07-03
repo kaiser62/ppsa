@@ -75,6 +75,16 @@ jobs:
           TMPDIR: /tmp
           PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
           PPSA_SKIP_BOOTSTRAP: ${{ steps.cache-rootfs.outputs.cache-hit == 'true' && '1' || '' }}
+          # WireGuard auto-registration creds, same as build-release.yml.
+          # Without these the bundled seed ships enabled=false and installer
+          # installs never join the WireGuard network.
+          PPSA_WG_API_URL: ${{ secrets.PPSA_WG_API_URL }}
+          PPSA_WG_API_USER: ${{ secrets.PPSA_WG_API_USER }}
+          PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}
+          PPSA_WG_PEER_NAME: ${{ secrets.PPSA_WG_PEER_NAME }}
+          PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
+          PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
+          PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
         run: |
           set -e
           mkdir -p installer/config/includes.binary/ppsa

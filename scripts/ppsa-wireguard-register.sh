@@ -141,13 +141,17 @@ else
     ENABLED=$(grep -oP '"enabled"\s*:\s*\K(true|false)' "${CONFIG_FILE}" 2>/dev/null || true)
 fi
 
-if [[ -z "${API_URL}" || -z "${API_USER}" || -z "${API_PASS}" ]]; then
-    fail "Missing api_url, api_user, or api_password in ${CONFIG_FILE}" 1
-fi
-
+# Disabled check must come BEFORE the credentials check: the stock image
+# ships enabled=false with empty creds ("not configured" state). Checking
+# creds first made an unconfigured box fail with exit 1 and sit in a
+# systemd auto-restart loop instead of exiting 0 quietly.
 if [[ "${ENABLED}" == "false" ]]; then
     log "WireGuard registration disabled in config (enabled=false)"
     exit 0
+fi
+
+if [[ -z "${API_URL}" || -z "${API_USER}" || -z "${API_PASS}" ]]; then
+    fail "Missing api_url, api_user, or api_password in ${CONFIG_FILE}" 1
 fi
 
 # Default peer name
