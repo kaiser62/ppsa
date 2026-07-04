@@ -767,16 +767,38 @@ if [ -f "$SHIM_SIGNED" ] && [ -f "$GRUB_SIGNED" ]; then
         cp "$MM_SIGNED" "$MOUNT_DIR/boot/efi/EFI/BOOT/mmx64.efi"
     fi
 
-    # Early config at the signed GRUB's baked-in prefix. No insmod needed:
-    # the signed core has search/part_gpt/ext2/configfile etc. built in
-    # (and under Secure Boot, loading .mod files from disk is blocked
-    # anyway - everything the menu needs must be, and is, built in).
+    # Config at the signed GRUB's baked-in prefix. No insmod needed: the
+    # signed core has search/part_gpt/ext2/linux etc. built in (and under
+    # Secure Boot, loading .mod files from disk is blocked anyway -
+    # everything the menu needs must be, and is, built in).
+    #
+    # The menu entries are embedded directly here rather than doing
+    # search+set-prefix+configfile out to a second grub.cfg. That two-hop
+    # redirect (needed only for the *unsigned* grub-mkstandalone fallback
+    # below, which has no baked-in prefix of its own) causes GRUB's
+    # shim_lock verification of the kernel to fail here ("bad shim
+    # signature") even though shim/GRUB/kernel are all validly signed -
+    # the live-installer ISO's own boot (proven to work under Secure
+    # Boot) never does this indirection, it boots straight off one
+    # grub.cfg. Keeping one file removes the only structural difference.
     mkdir -p "$MOUNT_DIR/boot/efi/EFI/debian"
     cat > "$MOUNT_DIR/boot/efi/EFI/debian/grub.cfg" <<LOADEREOF
-search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
-set prefix=(\$root)/boot/grub
-configfile (\$root)/boot/grub/grub.cfg
+set default=0
+set timeout=3
+
+menuentry "PPSA Linux" {
+    search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+    linux /vmlinuz root=UUID=${ROOT_UUID} ro quiet mitigations=off
+    initrd /initrd.img
+}
+
+menuentry "PPSA Linux (recovery)" {
+    search --no-floppy --fs-uuid --set=root ${ROOT_UUID}
+    linux /vmlinuz root=UUID=${ROOT_UUID} ro single
+    initrd /initrd.img
+}
 LOADEREOF
+    sed -i 's/\r$//' "$MOUNT_DIR/boot/efi/EFI/debian/grub.cfg" 2>/dev/null || true
 
     # Also populate EFI/debian with the signed set. grub-install above put
     # an UNSIGNED locally-built core at EFI/debian/grubx64.efi; firmware
