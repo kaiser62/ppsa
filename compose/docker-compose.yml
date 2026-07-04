@@ -88,7 +88,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/wireguard:/etc/wireguard:rw
       - ../backups:/backups:ro
-      - ../.env:/opt/ppsa/.env:ro  # ponytail: webui reads this for /api/env (Config tab)
+      - ../.env:/opt/ppsa/.env:rw  # ponytail: webui reads AND writes this for /api/env (Config/Backup tabs)
+      - palworld_data:/palworld-data  # ponytail: rw, so the Mods tab can drop .pak files into Pal/Content/Paks/~mods
       - /:/host:ro  # ponytail: webui needs access to host's nmcli/wpa_supplicant for Wi-Fi scan
       - /etc/ppsa:/etc/ppsa:rw  # ponytail: override /:/host:ro for this dir so iptables-save persists across reboots. Docker's most-specific-path resolution makes this rw.
     cap_add:

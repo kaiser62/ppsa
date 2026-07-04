@@ -304,13 +304,13 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp     # SSH (primary)
 ufw allow 10022/tcp  # SSH (alternate port)
-ufw allow 8211/udp   # Palworld game
-ufw allow 8080/tcp   # Web UI
-ufw allow 10086/tcp  # WireGuard Dashboard
 ufw allow 51820/udp  # WireGuard tunnel (admin)
 ufw allow 51830/udp  # WireGuard tunnel (PPSA gaming)
-ufw allow 27015/udp  # Steam query
-ufw allow 8212/tcp   # Palworld REST API
+# Game (8211/udp, 27015/udp, 8212/tcp), Web UI (8080/tcp), and WG Dashboard
+# (10086/tcp) are intentionally NOT opened here. They are reachable only via
+# the WG_FRIENDS iptables chain for 10.8.0.0/24 (see ppsa-firewall-apply.sh),
+# i.e. WireGuard-friends-only, never directly from LAN/WAN.
+ufw allow from 192.168.50.0/24 to any port 8080 proto tcp  # onboarding hotspot only
 
 # Install ppsa-firewall-restore.service so the WG_FRIENDS chain survives
 # reboots. ppsa-firewall-apply.sh writes its rules to /etc/ppsa/ (because

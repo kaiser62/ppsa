@@ -12,6 +12,7 @@ import shlex
 import re
 import asyncio
 import subprocess
+import zipfile
 from pathlib import Path
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
@@ -19,7 +20,7 @@ from contextlib import asynccontextmanager
 import httpx
 import docker as _docker_sdk
 _docker = _docker_sdk.from_env()
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile
 from fastapi.responses import Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
@@ -442,7 +443,10 @@ async def update_env(data: dict, _user: str = Depends(require_auth)):
             lines.append(f"{key}={value}\n")
             changed_keys.append(key)
 
-    ENV_FILE.write_text("".join(lines))
+    try:
+        ENV_FILE.write_text("".join(lines))
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"could not write .env: {e}")
     return {"status": "ok", "updated": changed_keys}
 
 
@@ -556,6 +560,59 @@ async def trigger_backup(_user: str = Depends(require_auth)):
     # The offen/docker-volume-backup container runs backup with 'backup' entrypoint
     out = _run_docker(["exec", "ppsa-backup", "backup"])
     return {"status": "triggered", "detail": out[:500]}
+
+
+# ---------------------------------------------------------------------------
+# Mod management (protected) — .pak-only, dropped into the palworld_data volume
+# ---------------------------------------------------------------------------
+PALWORLD_DATA = Path("/palworld-data")  # mounted from the palworld_data volume by compose
+MODS_DIR = PALWORLD_DATA / "Pal/Content/Paks/~mods"
+
+@app.get("/api/mods")
+async def list_mods(_user: str = Depends(require_auth)):
+    """List installed .pak mods."""
+    if not MODS_DIR.exists():
+        return {"mods": []}
+    return {"mods": sorted(p.name for p in MODS_DIR.glob("*.pak"))}
+
+@app.post("/api/mods/install")
+async def install_mod(file: UploadFile, _user: str = Depends(require_auth)):
+    """Install a mod from an uploaded zip. Only .pak files are supported —
+    UE4SS/Lua mods require a Windows/Proton runtime this server doesn't run."""
+    MODS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = Path(f"/tmp/{os.path.basename(file.filename or 'mod.zip')}")
+    tmp.write_bytes(await file.read())
+    installed, skipped = [], []
+    try:
+        with zipfile.ZipFile(tmp) as z:
+            for info in z.infolist():
+                if info.is_dir():
+                    continue
+                if info.filename.lower().endswith(".pak"):
+                    target = MODS_DIR / Path(info.filename).name
+                    target.write_bytes(z.read(info))
+                    installed.append(target.name)
+                else:
+                    skipped.append(info.filename)
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="not a valid zip file")
+    finally:
+        tmp.unlink(missing_ok=True)
+    if not installed:
+        raise HTTPException(
+            status_code=400,
+            detail="no .pak files found in zip (UE4SS/Lua mods are not supported — this server runs the native Linux binary)",
+        )
+    return {"status": "ok", "installed": installed, "skipped_non_pak": skipped}
+
+@app.delete("/api/mods/{name}")
+async def remove_mod(name: str, _user: str = Depends(require_auth)):
+    """Remove an installed .pak mod."""
+    target = MODS_DIR / Path(name).name  # .name strips any path traversal
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="mod not found")
+    target.unlink()
+    return {"status": "removed"}
 
 @app.get("/api/backup/config")
 async def get_backup_config(_user: str = Depends(require_auth)):
@@ -810,12 +867,13 @@ WIFI_CONFIG = Path("/etc/ppsa/wifi.conf")  # host path; webui runs in container 
 @app.get("/api/wifi/status")
 async def wifi_status(_user: str = Depends(require_auth)):
     """Current Wi-Fi connection status, available networks, and hotspot state."""
-    rc, out, err = _host_exec("nmcli -t -f ACTIVE,SSID,SIGNAL,FREQ,SECURITY,IN-USE device wifi 2>/dev/null; echo ---; nmcli -t -f NAME,UUID,TYPE,DEVICE,STATE connection --active 2>/dev/null; echo ---; systemctl is-active ppsa-hotspot 2>/dev/null")
+    rc, out, err = _host_exec("nmcli -t -f ACTIVE,SSID,SIGNAL,FREQ,SECURITY,IN-USE device wifi 2>/dev/null; echo ---; nmcli -t -f NAME,UUID,TYPE,DEVICE,STATE connection --active 2>/dev/null")
     if rc != 0 and not out:
         raise HTTPException(status_code=500, detail=f"nmcli failed: {err}")
+    _, hotspot_out, _ = _host_exec("pgrep -f hostapd-ppsa.conf >/dev/null 2>&1 && echo active || echo inactive")
     return {
         "nmcli_output": out,
-        "hotspot_active": "active" in out.lower() if out else False,
+        "hotspot_active": hotspot_out.strip() == "active",
     }
 
 @app.get("/api/wifi/scan")
@@ -900,6 +958,14 @@ async def wifi_hotspot_start(_user: str = Depends(require_auth)):
             return {"status": "no_wifi_hardware", "detail": "No Wi-Fi device detected. Use Ethernet."}
         raise HTTPException(status_code=500, detail=detail)
     return {"status": "hotspot_started", "detail": "Connect to PPSA-Setup (password: ppsa-setup-2026) and visit http://192.168.50.1/"}
+
+@app.post("/api/wifi/hotspot/stop")
+async def wifi_hotspot_stop(_user: str = Depends(require_auth)):
+    """Stop the PPSA-Setup hotspot."""
+    rc, out, err = _host_exec("bash /opt/ppsa/scripts/ppsa-wifi-onboard.sh --stop", timeout=20)
+    if rc != 0:
+        raise HTTPException(status_code=500, detail=f"hotspot stop failed: {err or out}")
+    return {"status": "hotspot_stopped"}
 
 
 # ---------------------------------------------------------------------------

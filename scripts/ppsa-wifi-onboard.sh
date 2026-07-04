@@ -32,6 +32,18 @@ log()  { echo "[$(date +%H:%M:%S)] $*"; }
 have_wifi() { nmcli -t -f DEVICE,TYPE device 2>/dev/null | grep -q ":wifi$"; }
 wifi_iface() { nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | awk -F: '$2=="wifi" && $3=="connected"{print $1; exit}'; }
 
+# --- Stop mode: tear down the hotspot (called from the web UI) ---
+if [ "${1:-}" = "--stop" ]; then
+    log "Stopping hotspot..."
+    pkill -f "hostapd.*hostapd-ppsa.conf" 2>/dev/null || true
+    pkill -f "dnsmasq.*ppsa-hotspot.conf" 2>/dev/null || true
+    nmcli con down ppsa-hotspot 2>/dev/null || true
+    nmcli con delete ppsa-hotspot 2>/dev/null || true
+    rm -f "$STATE_FILE"
+    log "Hotspot stopped."
+    exit 0
+fi
+
 # --- Skip if no Wi-Fi hardware ---
 if ! have_wifi; then
     log "No Wi-Fi hardware detected. Exiting."

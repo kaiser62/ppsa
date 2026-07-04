@@ -186,6 +186,7 @@
         <button onclick="showPage('config',event)">Config</button>
         <button onclick="showPage('system',event)">System</button>
         <button onclick="showPage('backup',event)">Backup</button>
+        <button onclick="showPage('mods',event)">Mods</button>
         <button onclick="showPage('wifi',event)">Wi-Fi</button>
         <button onclick="showPage('firewall',event)">Firewall</button>
         <button onclick="showPage('wireguard',event)">WireGuard</button>
@@ -322,6 +323,32 @@
       </div>
     </div>
 
+    <!-- Mods -->
+    <div id="page-mods" class="page">
+      <div id="mods-alert" class="alert"></div>
+      <p class="muted">Only <code>.pak</code> mods are supported (no UE4SS/Lua — this server runs the native Linux Palworld binary). Restart the Palworld container after installing or removing mods.</p>
+
+      <div class="card">
+        <h3>Install Mod</h3>
+        <div class="form-group">
+          <label>Mod zip file</label>
+          <input type="file" id="mod-file" accept=".zip">
+        </div>
+        <div class="row" style="margin-top:0.5rem;gap:0.5rem;">
+          <button onclick="installMod()">Install</button>
+          <button class="outline" onclick="restartPalworld()">Restart Palworld Container</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Installed Mods</h3>
+        <table>
+          <thead><tr><th>File</th><th></th></tr></thead>
+          <tbody id="mods-tbody"><tr><td colspan="2">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Wi-Fi -->
     <div id="page-wifi" class="page">
       <div id="wifi-alert" class="alert"></div>
@@ -337,6 +364,7 @@
         <div class="row" style="margin-top:0.5rem;gap:0.5rem;">
           <button class="small" onclick="wifiScan()">Rescan Networks</button>
           <button class="small" onclick="wifiHotspotStart()">Start PPSA-Setup Hotspot</button>
+          <button class="small outline" onclick="wifiHotspotStop()">Turn Off Hotspot</button>
           <button class="small danger" onclick="wifiDisconnect()">Disconnect</button>
         </div>
       </div>
@@ -559,6 +587,7 @@ function showPage(name, ev) {
   if (name === 'config') loadEnv();
   if (name === 'system') refreshSystem();
   if (name === 'backup') refreshBackup();
+  if (name === 'mods') refreshMods();
   if (name === 'wireguard') wgStatus();
   if (name === 'wifi') wifiScan();
   if (name === 'firewall') refreshFirewall();
@@ -885,6 +914,58 @@ async function wifiHotspotStart() {
     alert('PPSA-Setup hotspot started. Connect your phone to "PPSA-Setup" and visit http://192.168.50.1/');
   } catch (err) {
     alert('Failed: ' + err.message);
+  }
+}
+
+async function wifiHotspotStop() {
+  if (!confirm('Turn off the PPSA-Setup hotspot?')) return;
+  try {
+    await api('/api/wifi/hotspot/stop', { method: 'POST' });
+    alert('PPSA-Setup hotspot stopped.');
+  } catch (err) {
+    alert('Failed: ' + err.message);
+  }
+}
+
+// --- Mods ---
+async function refreshMods() {
+  const tbody = document.getElementById('mods-tbody');
+  try {
+    const data = await api('/api/mods');
+    if (data.mods?.length) {
+      tbody.innerHTML = data.mods.map(m =>
+        `<tr><td>${e(m)}</td><td><button class="small danger" onclick="removeMod('${e(m).replace(/'/g, "\\'")}')">Remove</button></td></tr>`
+      ).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="2">No mods installed</td></tr>';
+    }
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="2" style="color:var(--red)">Error: ${e(err.message)}</td></tr>`;
+  }
+}
+
+async function installMod() {
+  const input = document.getElementById('mod-file');
+  if (!input.files.length) { showAlert('Choose a zip file first', 'error', 'mods-alert'); return; }
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+  try {
+    const data = await api('/api/mods/install', { method: 'POST', body: formData });
+    showAlert('Installed: ' + data.installed.join(', ') + '. Restart the Palworld container to apply.', 'success', 'mods-alert');
+    input.value = '';
+    refreshMods();
+  } catch (err) {
+    showAlert('Error: ' + err.message, 'error', 'mods-alert');
+  }
+}
+
+async function removeMod(name) {
+  if (!confirm('Remove mod ' + name + '?')) return;
+  try {
+    await api('/api/mods/' + encodeURIComponent(name), { method: 'DELETE' });
+    refreshMods();
+  } catch (err) {
+    showAlert('Error: ' + err.message, 'error', 'mods-alert');
   }
 }
 
