@@ -1,10 +1,21 @@
+# =============================================================================
+# PPSA - Build Installer ISO
+# =============================================================================
+# Release policy (matches build-release.yml): a `vX.Y.Z` tag push builds the
+# installer ISO and attaches it to that tag's existing GitHub Release (created
+# by build-release.yml). workflow_dispatch builds are for manual/dev testing
+# only and upload a workflow artifact instead of publishing a release.
+# =============================================================================
+
 name: Build PPSA Installer
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       version:
-        description: 'PPSA version to bundle in the installer (e.g. v1.1.16)'
+        description: 'Label for this test build (e.g. v1.1.16-test). Does not publish a release.'
         required: true
         type: string
       force_rebuild:
@@ -96,8 +107,8 @@ jobs:
           mkdir -p installer/config/includes.binary/ppsa
           cd installer/config/includes.binary/ppsa
 
-          VERSION="${{ inputs.version }}"
-          SIZE_MB="${{ inputs.seed_image_size_mb }}"
+          VERSION="${{ inputs.version || github.ref_name }}"
+          SIZE_MB="${{ inputs.seed_image_size_mb || '6144' }}"
 
           cd ../../../..
           bash scripts/build-live-usb.sh \
@@ -124,21 +135,32 @@ jobs:
         run: |
           set -e
           cd installer
+          VERSION="${{ inputs.version || github.ref_name }}"
           ISO=$(ls live-image-*.hybrid.iso | head -1)
-          OUT="ppsa-installer-${{ inputs.version }}.iso.zst"
+          OUT="ppsa-installer-${VERSION}.iso.zst"
           zstd -T0 -19 -o "../${OUT}" "${ISO}"
           cd ..
           sha256sum "${OUT}" > "${OUT}.sha256"
           ls -la "${OUT}"*
 
-      - name: Upload to release (draft)
-        uses: softprops/action-gh-release@v2
+      - name: Upload build artifact (workflow_dispatch only, not a release)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ inputs.version }}
-          name: "PPSA ${{ inputs.version }}"
-          prerelease: true
-          draft: true
-          fail_on_unmatched_files: true
-          files: |
+          name: ppsa-installer-${{ inputs.version }}
+          path: |
             ppsa-installer-${{ inputs.version }}.iso.zst
             ppsa-installer-${{ inputs.version }}.iso.zst.sha256
+          retention-days: 14
+
+      - name: Attach ISO to Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "PPSA ${{ github.ref_name }}"
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            ppsa-installer-${{ github.ref_name }}.iso.zst
+            ppsa-installer-${{ github.ref_name }}.iso.zst.sha256

@@ -1,6 +1,12 @@
 # =============================================================================
 # PPSA - Build & Release
 # =============================================================================
+# Release policy: ONLY a `vX.Y.Z` tag push creates a public GitHub Release.
+#   - push to master: build only, validates the pipeline, no release.
+#   - workflow_dispatch: build only, uploads workflow artifacts for manual
+#     testing/download — never publishes a public release.
+#   - push tags/v*: build + publish a Release with USB img + VBox VDI.
+#
 # Strategy for speed:
 #   1. Two parallel jobs (USB, VBox), each with its own build+compress.
 #   2. zstd -3 compression: ~10x faster than xz -0, similar ratio.
@@ -18,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version string (e.g., v1.0.0-test)'
+        description: 'Label for this test build (e.g. v1.0.0-test). Does not publish a release.'
         required: true
         default: 'v0.0.0-dev'
       expose_ssh_lan:
@@ -98,41 +104,36 @@ jobs:
           F="ppsa-usb-${VER}.img.zst"
           sha256sum "$F" > "${F}.sha256"
 
-      - name: Delete stale master draft
+      - name: Upload build artifact (workflow_dispatch only, not a release)
         if: github.event_name == 'workflow_dispatch'
-        # Ponytail: workflow_dispatch releases to the user-supplied tag, but
-        # when the user runs with version=master, softprops/action-gh-release
-        # fails on re-runs because the master draft already exists. Clean up
-        # first so the new dispatch always creates a fresh release. The
-        # `|| true` makes it a no-op on the first run (no draft exists).
-        run: gh release delete master --yes 2>/dev/null || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ppsa-usb-${{ inputs.version }}
+          path: |
+            ppsa-usb-*.zst
+            ppsa-usb-*.zst.sha256
+          retention-days: 14
 
       - name: Create Release
-        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ppsa-usb-*.zst
             ppsa-usb-*.zst.sha256
-          # On workflow_dispatch, github.ref_name is the branch name (e.g. "master")
-          # not the user-supplied version, so prefer inputs.version. On a tag push,
-          # inputs.version is empty, so fall back to the tag name.
-          tag_name: ${{ inputs.version || github.ref_name }}
-          name: PPSA ${{ inputs.version || github.ref_name }}
-          draft: ${{ github.event_name == 'workflow_dispatch' }}
-          prerelease: ${{ contains(inputs.version || github.ref_name, '-') }}
+          tag_name: ${{ github.ref_name }}
+          name: PPSA ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           body: |
-            ## PPSA ${{ inputs.version || github.ref_name }}
+            ## PPSA ${{ github.ref_name }}
 
             ### Download
-            - `ppsa-usb-${{ inputs.version || github.ref_name }}.img.zst` — zstd-compressed disk image (8GB raw → ~2GB compressed)
-            - `ppsa-usb-${{ inputs.version || github.ref_name }}.img.zst.sha256` — SHA-256 checksum
+            - `ppsa-usb-${{ github.ref_name }}.img.zst` — zstd-compressed disk image (8GB raw → ~2GB compressed)
+            - `ppsa-usb-${{ github.ref_name }}.img.zst.sha256` — SHA-256 checksum
 
             ### VirtualBox (VDI)
-            - `ppsa-vbox-${{ inputs.version || github.ref_name }}.vdi.zst` — VirtualBox disk image (4GB raw)
-            - `ppsa-vbox-${{ inputs.version || github.ref_name }}.vdi.zst.sha256` — SHA-256 checksum
+            - `ppsa-vbox-${{ github.ref_name }}.vdi.zst` — VirtualBox disk image (4GB raw)
+            - `ppsa-vbox-${{ github.ref_name }}.vdi.zst.sha256` — SHA-256 checksum
 
             ### Usage
             1. Download `.img.zst` (or `.vdi.zst` for VirtualBox)
@@ -202,23 +203,23 @@ jobs:
           F="ppsa-vbox-${VER}.vdi.zst"
           sha256sum "$F" > "${F}.sha256"
 
-      - name: Delete stale master draft
+      - name: Upload build artifact (workflow_dispatch only, not a release)
         if: github.event_name == 'workflow_dispatch'
-        # Ponytail: see matching step in the usb job — clear any prior
-        # master draft so the new dispatch can create a fresh release
-        # without colliding with the existing tag_name.
-        run: gh release delete master --yes 2>/dev/null || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ppsa-vbox-${{ inputs.version }}
+          path: |
+            ppsa-vbox-*.zst
+            ppsa-vbox-*.zst.sha256
+          retention-days: 14
 
       - name: Upload to Release
-        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ppsa-vbox-*.zst
             ppsa-vbox-*.zst.sha256
-          tag_name: ${{ inputs.version || github.ref_name }}
-          name: PPSA ${{ inputs.version || github.ref_name }}
-          draft: ${{ github.event_name == 'workflow_dispatch' }}
-          prerelease: ${{ contains(inputs.version || github.ref_name, '-') }}
+          tag_name: ${{ github.ref_name }}
+          name: PPSA ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
