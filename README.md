@@ -1,35 +1,32 @@
 # PPSA — Portable Palworld Server Appliance
 
 A self-contained, bootable Palworld dedicated server that lives entirely on a
-USB drive (or any x86_64 VM/bare-metal). Plug it in, boot from it, and you
-have a full Palworld server with a web management UI — no installation on the
-host disk, no operating system required on the host.
+USB drive, SSD, VM disk, or spare partition. Plug it in, boot from it, and you
+have a full Palworld server with a web management UI — no host OS install
+required.
 
-> **Status: Production-ready (v1.0.0).** Booted and verified on USB, VirtualBox,
-> and QEMU/OVMF. All five containers start cleanly on first boot.
+> **Latest: v1.2.8.** Debian 13 (Trixie), Secure Boot–signed GRUB, Docker
+> Compose stack, WireGuard-based remote access, Wi-Fi onboarding hotspot.
 
 ---
 
 ## What you get
 
-- **Plug-and-boot Wi-Fi setup** — the USB serves a `PPSA-Setup` hotspot on first boot
-  so any laptop can connect and select a Wi-Fi network from the Web UI
-  ([docs](docs/wifi-onboarding.md))
-- **Debian 13 (Trixie)** with kernel 6.12 LTS, booted directly from a USB/SSD/VDI
-- **Docker Engine + Docker Compose v2** with the full PPSA stack:
-  - **Palworld server** (`thijsvanloef/palworld-server-docker`) — Steam auto-update
-  - **Web UI** (FastAPI + vanilla JS) — single-page dashboard
-  - **WireGuard Dashboard** — full peer management UI
-  - **Backup agent** (`offen/docker-volume-backup`) — daily tar.gz of all volumes
-  - **Watchtower** — automatic container updates (opt-in via labels)
-  - Optional **Prometheus + Grafana** stack for monitoring
-- **First-boot automation** — `ppsa-install.service` runs the install on first boot
-- **Auto-resize** — root partition grows to fill the disk on first boot (USB only)
-- **UFW firewall** with fail2ban — only SSH and WebUI ports open
-- **WireGuard tunnel** to your own Oracle Cloud VPS for external access (optional)
-- **8 CPU / 8 GB RAM recommended** for the host (4 GB / 4 CPU minimum)
-- **Works on BIOS or UEFI** systems (GRUB dual-install), including
-  **UEFI Secure Boot** (Microsoft-signed shim + Debian-signed GRUB)
+- **Plug-and-boot Wi-Fi setup** — on first boot, if no network is configured,
+  PPSA serves a `PPSA-Setup` hotspot so you can pick a Wi-Fi network from the
+  Web UI ([details](docs/wifi-onboarding.md))
+- **Debian 13 (Trixie)**, booted directly from USB/SSD/VDI, or installed
+  alongside an existing OS via the installer ISO ([details](docs/dual-boot-install.md))
+- **Docker Compose stack**: Palworld game server, a FastAPI Web UI, WGDashboard
+  (WireGuard peer management), an automated backup agent, and Watchtower
+- **UEFI Secure Boot support** — signed shim + Debian-signed GRUB chain, no MOK
+  enrollment needed (see [Architecture](docs/architecture.md))
+- **First-boot automation** — installs and starts the whole stack unattended,
+  auto-resizes the root partition to fill the disk
+- **WireGuard-gated remote access** — game/Web UI/WGDashboard ports are reachable
+  only over a WireGuard tunnel by default, not the open LAN/WAN (see
+  [Networking & firewall](docs/architecture.md#networking--firewall))
+- **Automatic backups** (daily, cron'd) and automatic container updates (opt-in)
 
 ---
 
@@ -37,25 +34,23 @@ host disk, no operating system required on the host.
 
 ### 1. Download a release
 
-Grab the latest **production** release from
+Grab the latest release from
 [github.com/kaiser62/ppsa/releases](https://github.com/kaiser62/ppsa/releases):
 
 | Asset | Use for |
 |-------|---------|
-| `ppsa-usb-vX.X.X.img.zst` | **Physical USB / SSD** (recommended) |
-| `ppsa-vbox-vX.X.X.vdi.zst` | **VirtualBox** VM |
-| `ppsa-vbox-vX.X.X.vdi.zst.sha256` | SHA256 check |
-| `ppsa-usb-vX.X.X.img.zst.sha256` | SHA256 check |
+| `ppsa-usb-vX.X.X.img.zst` | Physical USB / SSD (recommended) |
+| `ppsa-vbox-vX.X.X.vdi.zst` | VirtualBox VM |
+| `ppsa-installer-vX.X.X.iso.zst` | Installer ISO — installs PPSA onto a spare drive/partition without touching your existing OS ([guide](docs/dual-boot-install.md)) |
+| `*.sha256` | Checksum for the matching asset |
 
 ### 2. Write to USB (physical hardware)
 
 **Windows (Rufus):**
-1. Download `ppsa-usb-vX.X.X.img.zst`
-2. Decompress with [7-Zip](https://www.7-zip.org/): right-click → *7-Zip → Extract Here*
-3. Open **Rufus** → select your USB drive → click **SELECT** → choose `ppsa-usb-vX.X.X.img`
-4. Click **START** → choose **DD image mode** (not ISO mode!) → OK → OK
-5. Wait for write to complete (3-10 min on USB 3.0)
-6. Eject the USB safely
+1. Decompress `ppsa-usb-vX.X.X.img.zst` with [7-Zip](https://www.7-zip.org/)
+2. Open **Rufus** → select your USB drive → **SELECT** → choose the `.img` file
+3. **START** → **DD image mode** (not ISO mode) → OK → OK
+4. Wait for the write to finish, then eject safely
 
 **Linux / macOS:**
 ```bash
@@ -66,128 +61,95 @@ sync
 
 ### 3. Boot from the USB
 
-1. Plug the USB into your target machine
-2. Power on and press the boot menu key (F12 / F2 / DEL — depends on BIOS)
-3. Select the USB device
-4. GRUB menu appears → auto-boots into PPSA Linux
-5. Log in at the console with `ppsa` / `ppsa` (or `artho` / `arthoroy` on the backup SSH port)
-6. The first-boot `ppsa-install.service` runs in the background
+1. Plug the USB into the target machine, power on, and enter the boot menu
+   (F12 / F2 / DEL, depends on the BIOS)
+2. Select the USB device — GRUB auto-boots into PPSA
+3. Log in at the console with `ppsa` / `ppsa` (see
+   [default credentials](#default-credentials--change-immediately))
+4. First boot runs unattended in the background — the console shows live progress
 
 ### 4. Open the Web UI
 
-After ~3-10 minutes (the first boot pulls Docker images and the Palworld Steam
-update ~3.8 GB), open a browser on any machine on the same network:
-
-```
-http://<ppsa-ip>:8080
-```
+First boot takes a few minutes (pulling Docker images and the Palworld Steam
+update, ~4 GB). Once it's done, the console prints the Web UI URL. Open it
+from a machine that can reach the PPSA host — by default that means the same
+WireGuard network, **not** plain LAN (see
+[Networking & firewall](docs/architecture.md#networking--firewall) for why,
+and how to connect over WireGuard).
 
 Default login: **`admin` / `admin`** — change this on the Settings tab immediately.
 
-Find the PPSA IP from the console login banner, or:
-```bash
-# from any SSH client
-ssh ppsa@<ppsa-ip> ip -4 addr show | grep inet
-```
-
 ---
 
-## Running in VirtualBox (alternative)
+## Running in VirtualBox
 
 ```bash
-# Decompress
 zstd -d ppsa-vbox-vX.X.X.vdi.zst
 ```
 
-In VirtualBox:
-1. **Machine → New** → Name: `ppsa`
-2. Type: **Linux**, Version: **Debian (64-bit)**
-3. Memory: **8192 MB** minimum, **CPU: 4** cores
-4. **Use an existing virtual hard disk file** → select `ppsa-vbox-vX.X.X.vdi`
-5. **Settings → Network → Adapter 1**: Attach to **Bridged Adapter** (so the VM gets a real LAN IP)
-6. **Settings → System → Enable EFI** (recommended; legacy BIOS also works)
-7. **Start** the VM
+1. **Machine → New** → Type **Linux**, Version **Debian (64-bit)**
+2. Memory: 4 GB minimum (8 GB recommended), 2+ CPUs
+3. **Use an existing virtual hard disk file** → select the extracted `.vdi`
+4. **System → Enable EFI** (recommended — matches the Secure Boot chain used on
+   real hardware; legacy BIOS also works)
+5. Start the VM
 
-First boot is identical: ~3-10 min for the install, then `http://<bridged-ip>:8080`.
+First boot behaves identically to physical hardware.
 
 ---
 
-## Architecture
+## Networking model, in one paragraph
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│  USB / SSD / VDI  (8 GB, grows to fill device)                │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  Debian 13 (Trixie) + kernel 6.12                       │  │
-│  │  ┌──────────────────────────────────────────────────┐    │  │
-│  │  │  Docker Engine                                   │    │  │
-│  │  │  ┌─────────────┐ ┌──────────┐ ┌──────────────┐  │    │  │
-│  │  │  │ ppsa-palworld│ │ ppsa-webui│ │ ppsa-wgdashbd│  │    │  │
-│  │  │  │  (8211/udp)  │ │ (8080/tcp)│ │ (10086/tcp)  │  │    │  │
-│  │  │  └─────────────┘ └──────────┘ └──────────────┘  │    │  │
-│  │  │  ┌─────────────┐ ┌──────────┐                    │    │  │
-│  │  │  │ ppsa-backup  │ │ppsa-watch│                    │    │  │
-│  │  │  │  (cron 3am)  │ │  tower   │                    │    │  │
-│  │  │  └─────────────┘ └──────────┘                    │    │  │
-│  │  └──────────────────────────────────────────────────┘    │  │
-│  │  ┌──────────────────────────────────────────────────┐    │  │
-│  │  │ WireGuard tunnel (optional) → Oracle Cloud VPS  │    │  │
-│  │  └──────────────────────────────────────────────────┘    │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────────┘
-```
+By default, nothing except SSH and the WireGuard tunnel itself is reachable
+from your LAN or the internet. The game server, Web UI, and WGDashboard are
+only reachable from clients connected to the PPSA's WireGuard network. This
+means you can hand a WireGuard config to a friend and they can reach your
+server from anywhere, without opening a single port on your router. Full
+details, including the opt-in build flag to also expose SSH on the LAN, are in
+[docs/architecture.md](docs/architecture.md#networking--firewall).
 
 ---
 
-## Services & Ports
+## Documentation
 
-| Service | Port | URL | Default creds |
-|---------|------|-----|---------------|
-| Palworld game server | `8211/udp` | n/a (game client) | `ppsa:ppsa` if set in `.env` |
-| Palworld REST API | `8212/tcp` | n/a (internal) | `admin` if set in `.env` |
-| Web UI | `8080/tcp` | `http://<ip>:8080` | `admin:admin` ⚠️ change! |
-| WireGuard Dashboard | `10086/tcp` | `http://<ip>:10086` | (set in WebUI tunnel setup) |
-| **PPSA-Setup Wi-Fi hotspot** | Wi-Fi 2.4 GHz | SSID `PPSA-Setup`, pwd `ppsa-setup-2026` | (auto on first boot) |
-| SSH (ppsa) | `22/tcp` | `ssh ppsa@<ip>` | `ppsa` |
-| SSH (artho) | `10022/tcp` | `ssh artho@<ip> -p 10022` | `artho` / `arthoroy` |
-
-> **All ports are bound to `0.0.0.0` by default.** UFW firewall is active with
-> a default-deny inbound policy. Only ports explicitly listed above are open.
+- [docs/architecture.md](docs/architecture.md) — boot chain, Docker stack, networking/firewall model
+- [docs/installation.md](docs/installation.md) — all install paths (USB, VirtualBox, dual-boot installer, bare metal)
+- [docs/deployment-guide.md](docs/deployment-guide.md) — end-to-end deployment walkthrough with reference detail
+- [docs/dual-boot-install.md](docs/dual-boot-install.md) — installer ISO: install PPSA on a spare drive/partition
+- [docs/wifi-onboarding.md](docs/wifi-onboarding.md) — the `PPSA-Setup` Wi-Fi hotspot
+- [docs/wireguard-setup.md](docs/wireguard-setup.md) — WireGuard auto-registration, hosting your own hub, player onboarding
+- [docs/troubleshooting.md](docs/troubleshooting.md) — common issues and fixes
+- [docs/local-builder.md](docs/local-builder.md) — the PowerShell local CI/CD builder (fast local iteration without waiting on GitHub Actions)
+- [CLAUDE.md](CLAUDE.md) — contributor/agent-facing build & architecture notes
 
 ---
 
-## Default credentials — **change immediately!**
+## Default credentials — change immediately!
 
 | User | Password | Where to change |
 |------|----------|-----------------|
 | `ppsa` (SSH) | `ppsa` | `passwd ppsa` (sudo) |
-| `artho` (SSH) | `arthoroy` | `passwd artho` (sudo) |
-| `admin` (WebUI) | `admin` | WebUI → Settings tab |
-| Palworld admin (in-game) | `changeme` | WebUI → Config tab |
+| `artho` (SSH, port `10022`) | `arthoroy` | `passwd artho` (sudo) |
+| `admin` (Web UI) | `admin` | Web UI → Settings tab |
+| Palworld admin (in-game) | `changeme` | Web UI → Config tab |
 
 ---
 
 ## Building from source
 
-The PPSA image is built on Linux (or WSL on Windows) by `scripts/build-live-usb.sh`.
-GitHub Actions builds and releases automatically when you push a tag.
+Images are built by GitHub Actions, not locally — see
+[docs/architecture.md](docs/architecture.md#build-pipeline) for why and how the
+pipeline is structured.
 
 ```bash
-# Local build
-sudo bash scripts/build-live-usb.sh --output ppsa-usb.img
+# Real release: push a version tag. build-release.yml and build-installer.yml
+# both fire automatically and publish a GitHub Release with all three assets.
+git tag v1.3.0 && git push origin v1.3.0
 
-# Trigger CI build
-git tag v1.0.0 && git push origin v1.0.0
+# Manual test build (does NOT publish a release, uploads a workflow artifact):
+gh workflow run build-release.yml -f version=v1.3.0-test
+gh workflow run build-installer.yml -f version=v1.3.0-test
 ```
-
-The build script:
-1. debootstrap Debian Trixie (or uses cached rootfs via `PPSA_CACHE_FILE`)
-2. Installs Docker, kernel, GRUB, all PPSA files
-3. Creates a GPT disk image with ESP (FAT32) + root (ext4) partitions
-4. Installs GRUB for both UEFI (x86_64-efi) and legacy BIOS (i386-pc)
-5. Writes a generated `grub.cfg` referencing the root partition by UUID
-
-Build time: ~5-7 minutes from a clean cache, ~3 minutes with cached rootfs.
 
 ---
 
@@ -196,65 +158,42 @@ Build time: ~5-7 minutes from a clean cache, ~3 minutes with cached rootfs.
 ```
 .
 ├── scripts/
-│   ├── build-live-usb.sh      # Image builder (debootstrap + chroot + GRUB)
-│   ├── install.sh             # First-boot: docker pull + up, UFW, fail2ban
-│   ├── first-boot.sh          # Boot banner with status + IP
-│   └── oracle/                # Oracle VPS setup scripts
+│   ├── build-live-usb.sh          # Image builder (debootstrap + chroot + GRUB)
+│   ├── install.sh                 # First-boot: docker pull + up, firewall, WireGuard
+│   ├── ppsa-firewall-apply.sh     # Rebuilds the WG_FRIENDS iptables chain
+│   ├── ppsa-wireguard-register.sh # Auto-registers as a wg-easy peer
+│   └── ppsa-wifi-onboard.sh       # PPSA-Setup hotspot for first-time Wi-Fi setup
 ├── compose/
-│   ├── docker-compose.yml           # Main stack (5 services)
-│   └── docker-compose.monitoring.yml # Optional Prometheus + Grafana
-├── docker/
-│   └── webui/                       # FastAPI WebUI container
-│       ├── Dockerfile
-│       └── app/
-│           ├── main.py              # API endpoints
-│           ├── requirements.txt
-│           └── static/index.html    # Single-page dashboard
-├── modules/                         # PowerShell modules for the local CI/CD builder
-├── docs/                            # Detailed documentation
-├── MASTER_PLAN.md                   # Local builder design doc
-├── builder.json                     # Local builder config
+│   ├── docker-compose.yml             # Main stack (palworld, webui, wgdashboard, backup, watchtower)
+│   └── docker-compose.monitoring.yml  # Optional Prometheus + Grafana overlay
+├── docker/webui/                  # The only live WebUI code (FastAPI + vanilla JS)
+├── installer/                     # live-build config for the dual-boot installer ISO
+├── modules/                       # PowerShell modules for the local CI/CD builder
+├── docs/                          # Documentation (see above)
 └── .github/workflows/
-    └── build-release.yml            # CI: build USB + VDI, upload to release
+    ├── build-release.yml          # CI: build USB img + VBox VDI, release on tag push
+    └── build-installer.yml        # CI: build installer ISO, attaches to the same release
 ```
-
----
-
-## Documentation
-
-- [docs/installation.md](docs/installation.md) — Detailed install steps
-- [docs/wifi-onboarding.md](docs/wifi-onboarding.md) — **Wi-Fi setup portal** (PPSA-Setup hotspot)
-- [docs/oracle-setup.md](docs/oracle-setup.md) — Oracle Cloud VPS setup for WireGuard
-- [docs/wireguard-setup.md](docs/wireguard-setup.md) — Tunnel configuration
-- [docs/architecture.md](docs/architecture.md) — System design
-- [docs/troubleshooting.md](docs/troubleshooting.md) — Common issues
-- [docs/configuration.md](docs/configuration.md) — All config options
-- [docs/builder.md](docs/builder.md) — Local CI/CD builder reference
 
 ---
 
 ## Versioning & releases
 
-- **v1.0.0** (current) — Production-ready. GRUB bootloader, fixed WebUI, all
-  bugs from v0.4.x resolved. Tagged `production`.
-- **v0.4.x** — WebUI fixed, GRUB boot, image verification
-- **v0.3.x** — Initial end-to-end stack
-
-Each release is built by GitHub Actions and includes both the raw USB image
-(`.img.zst`) and the VirtualBox disk (`.vdi.zst`). See the
-[Releases](https://github.com/kaiser62/ppsa/releases) page.
+Semantic version tags (`vX.Y.Z`) are the only thing that publishes a public
+release. Each release includes the raw USB image, the VirtualBox disk, and the
+installer ISO. See the [Releases page](https://github.com/kaiser62/ppsa/releases)
+for the full history and changelogs.
 
 ---
 
 ## Security
 
-- **Change all default passwords** before exposing to the network
-- UFW firewall is on by default (deny inbound except listed ports)
-- fail2ban watches SSH and the WebUI login
-- WebUI uses JWT tokens (24h expiry) over HTTP Basic auth
-- The SSH host key is generated on first boot
-- All Docker containers run as non-root where possible
-- `.env` file with secrets is git-ignored
+- **Change all default passwords** before exposing PPSA to any network
+- By default, only SSH and the WireGuard tunnel ports are open on the LAN/WAN —
+  the game server, Web UI, and WGDashboard are WireGuard-only (see
+  [Networking & firewall](docs/architecture.md#networking--firewall))
+- Web UI uses JWT tokens (24h expiry)
+- `.env` (secrets) is git-ignored and never baked into the image
 
 Report security issues via GitHub Issues (mark as `security`).
 
@@ -272,5 +211,5 @@ MIT — see [LICENSE](LICENSE).
 - **WGDashboard**: [`wgdashboard/wgdashboard`](https://github.com/donaldzou/wgdashboard)
 - **Backup agent**: [`offen/docker-volume-backup`](https://github.com/offen/docker-volume-backup)
 - **Watchtower**: [`containrrr/watchtower`](https://github.com/containrrr/watchtower)
-- **GRUB bootloader**: [GNU GRUB](https://www.gnu.org/software/grub/)
+- **wg-easy**: [`wg-easy/wg-easy`](https://github.com/wg-easy/wg-easy)
 - **Base OS**: [Debian 13 (Trixie)](https://www.debian.org/releases/trixie/)

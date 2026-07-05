@@ -1,8 +1,6 @@
 # PPSA Deployment Guide
 
-**Version:** v1.1.11 (commit `75f990c`, master branch)
-**Last updated:** 2026-06-30
-**Applies to:** PPSA v1.1.10+
+**Applies to:** any PPSA release — replace `vX.X.X` below with the version you downloaded.
 
 > **Quick path** — Want to deploy fast? Follow [Part 1](#part-1-quick-path) (~30 minutes).
 > Skip to: [Download](#4-get-the-image) | [Connect a player](#11-connect-a-player) | [Troubleshooting](#14-troubleshooting)
@@ -24,42 +22,42 @@ For the 80% case: you have a USB stick or VM, you have access to a wg-easy v15 i
 ## 2. Download the image
 
 ```bash
-gh release download v1.1.11 -R kaiser62/ppsa \
-  -p "ppsa-vbox-v1.1.11.vdi.zst" -p "ppsa-*.sha256" \
+gh release download vX.X.X -R kaiser62/ppsa \
+  -p "ppsa-vbox-vX.X.X.vdi.zst" -p "ppsa-*.sha256" \
   -D ./ppsa-release
 ```
 
-Or browse to <https://github.com/kaiser62/ppsa/releases> and pick `ppsa-usb-v1.1.11.img.zst` (USB) or `ppsa-vbox-v1.1.11.vdi.zst` (VM).
+Or browse to <https://github.com/kaiser62/ppsa/releases> and pick `ppsa-usb-vX.X.X.img.zst` (USB) or `ppsa-vbox-vX.X.X.vdi.zst` (VM).
 
 ## 3. Write to USB or create a VM
 
 ### USB (Windows, Rufus)
 
 ```bash
-zstd -d ppsa-usb-v1.1.11.img.zst
+zstd -d ppsa-usb-vX.X.X.img.zst
 ```
 
-1. Rufus → select USB → SELECT → `ppsa-usb-v1.1.11.img`.
+1. Rufus → select USB → SELECT → `ppsa-usb-vX.X.X.img`.
 2. START → **DD image mode** (NOT ISO) → OK.
 3. Wait 3-10 min, eject safely.
 
 ### USB (Linux/macOS)
 
 ```bash
-zstd -d ppsa-usb-v1.1.11.img.zst
-sudo dd if=ppsa-usb-v1.1.11.img of=/dev/sdX bs=4M status=progress conv=fsync
+zstd -d ppsa-usb-vX.X.X.img.zst
+sudo dd if=ppsa-usb-vX.X.X.img of=/dev/sdX bs=4M status=progress conv=fsync
 sync
 ```
 
 ### VirtualBox
 
 ```bash
-zstd -d ppsa-vbox-v1.1.11.vdi.zst
+zstd -d ppsa-vbox-vX.X.X.vdi.zst
 ```
 
 1. Machine → New → Name `ppsa`, Type **Linux**, Version **Debian (64-bit)**.
 2. Memory 4096 MB, CPU 1 (or 4 for production).
-3. Use an existing virtual hard disk → pick `ppsa-vbox-v1.1.11.vdi`.
+3. Use an existing virtual hard disk → pick `ppsa-vbox-vX.X.X.vdi`.
 4. Settings → Network → Adapter 1 → **Bridged Adapter** → pick your NIC.
 5. Settings → System → **Enable EFI**.
 6. Start the VM.
@@ -162,36 +160,36 @@ Two roles: **server admin (you)** owns the host, deploys the image, operates the
 **Option A — Download a release** (recommended):
 
 ```bash
-gh release download v1.1.11 -R kaiser62/ppsa \
+gh release download vX.X.X -R kaiser62/ppsa \
   -p "ppsa-*.zst" -p "ppsa-*.sha256" \
   -D ./ppsa-release
 ```
 
-Assets: `ppsa-usb-v1.1.11.img.zst` (USB/SSD) or `ppsa-vbox-v1.1.11.vdi.zst` (VM).
+Assets: `ppsa-usb-vX.X.X.img.zst` (USB/SSD) or `ppsa-vbox-vX.X.X.vdi.zst` (VM).
 
 **Option B — CI build:** `gh workflow run build-release.yml -f version=vX.Y.Z` (requires repo secrets; both formats built in ~5 min as a draft).
 
-**Option C — Build locally:** `git clone https://github.com/kaiser62/ppsa.git && cd ppsa && sudo bash scripts/build-live-usb.sh --output ppsa-usb.img` (or `pwsh ./scripts/Start-PpsaBuilder.ps1 -Version v1.1.11` on Windows).
+**Option C — Build locally:** `git clone https://github.com/kaiser62/ppsa.git && cd ppsa && sudo bash scripts/build-live-usb.sh --output ppsa-usb.img` (or `pwsh ./scripts/Start-PpsaBuilder.ps1 -Version vX.X.X` on Windows).
 
 ## 5. Deploy to USB
 
 ```bash
-zstd -d ppsa-usb-v1.1.11.img.zst
+zstd -d ppsa-usb-vX.X.X.img.zst
 ```
 
-**Windows (Rufus):** SELECT → `ppsa-usb-v1.1.11.img` → START → **DD image mode** → OK. Wait 3-10 min, eject safely.
+**Windows (Rufus):** SELECT → `ppsa-usb-vX.X.X.img` → START → **DD image mode** → OK. Wait 3-10 min, eject safely.
 
-**Linux / macOS:** `sudo dd if=ppsa-usb-v1.1.11.img of=/dev/sdX bs=4M status=progress conv=fsync && sync`. Triple-check the target — `dd` does not warn.
+**Linux / macOS:** `sudo dd if=ppsa-usb-vX.X.X.img of=/dev/sdX bs=4M status=progress conv=fsync && sync`. Triple-check the target — `dd` does not warn.
 
 ## 6. Deploy to VirtualBox
 
 ```bash
-zstd -d ppsa-vbox-v1.1.11.vdi.zst
+zstd -d ppsa-vbox-vX.X.X.vdi.zst
 ```
 
 1. Machine → New → Name `ppsa`, Type **Linux**, Version **Debian (64-bit)**.
 2. Memory **4096 MB** min, **8192 MB** recommended. CPU **1** for testing (vboxguest bug affects 2+ vCPU; see [Troubleshooting](#14-troubleshooting)), **4** for production.
-3. Use an existing virtual hard disk → `ppsa-vbox-v1.1.11.vdi`.
+3. Use an existing virtual hard disk → `ppsa-vbox-vX.X.X.vdi`.
 4. Settings → Network → Adapter 1 → **Bridged Adapter** → pick the NIC connected to your router.
 5. Settings → System → **Enable EFI** (recommended; legacy BIOS also works).
 6. Start.
@@ -327,7 +325,7 @@ Docker is still pulling images, or Palworld is downloading its 3.8 GB Steam upda
 
 ### Players tab stuck on "Loading..."
 
-Fixed in v1.1.10+. Earlier versions returned 500 + plain text from `/api/players` when the Palworld REST API was slow. Upgrade.
+Fixed in vX.X.X+. Earlier versions returned 500 + plain text from `/api/players` when the Palworld REST API was slow. Upgrade.
 
 ### WireGuard tab shows "Not Configured"
 
@@ -395,8 +393,8 @@ Shipped `vboxguest.ko` may not match the host VirtualBox version. Symptoms: kern
 
 ## Related docs
 
-- [wireguard-auto-registration.md](wireguard-auto-registration.md) — WG auto-registration flow and 120s polling.
+- [wireguard-setup.md](wireguard-setup.md) — WG auto-registration flow, hosting your own hub, player onboarding.
 - [wifi-onboarding.md](wifi-onboarding.md) — `PPSA-Setup` hotspot fallback.
-- [configuration.md](configuration.md) — every variable in `.env`.
-- [HANDOFF.md](HANDOFF.md) — infrastructure inventory and homeserver/wg-easy deployment.
-- [smoke-test.md](smoke-test.md) — automated Pester smoke tests.
+- [architecture.md](architecture.md) — boot chain, Docker stack, firewall model.
+- [troubleshooting.md](troubleshooting.md) — common issues and fixes.
+- [local-builder.md](local-builder.md) — local CI/CD builder reference.
