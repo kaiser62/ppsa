@@ -446,6 +446,20 @@ WGEOF
     echo "PPSA WireGuard config: not configured (set PPSA_WG_* env vars to bake in)"
 fi
 
+# Network policy: whether SSH (22, 10022) is opened on LAN/WAN at first boot.
+# Default (unset/false): SSH is reachable only via the WG_FRIENDS chain
+# (10.8.0.0/24, port 22 is in firewall.json's default allow-list) — nothing
+# is broadcast on the LAN. Set PPSA_EXPOSE_SSH_LAN=true to also open SSH
+# globally via ufw, e.g. for LAN-based recovery/debugging.
+if [ "${PPSA_EXPOSE_SSH_LAN:-false}" = "true" ]; then EXPOSE_SSH_LAN_JSON="true"; else EXPOSE_SSH_LAN_JSON="false"; fi
+cat > /etc/ppsa/network-policy.json <<POLEOF
+{
+  "expose_ssh_lan": ${EXPOSE_SSH_LAN_JSON}
+}
+POLEOF
+chmod 644 /etc/ppsa/network-policy.json
+echo "PPSA network policy: expose_ssh_lan=${EXPOSE_SSH_LAN_JSON}"
+
 # --- Network: DHCP on first Ethernet interface ---
 cat > /etc/systemd/network/20-wired.network <<NETEOF
 [Match]
@@ -642,6 +656,18 @@ WGEOF
         echo "PPSA WireGuard config: not configured (set PPSA_WG_* env vars to bake in)"
     fi
 fi
+
+# Re-write network-policy.json OUTSIDE the chroot too (same cache-hit
+# reasoning as wireguard.json above) — always reflects the current
+# PPSA_EXPOSE_SSH_LAN env var, never a stale cached value.
+if [ "${PPSA_EXPOSE_SSH_LAN:-false}" = "true" ]; then EXPOSE_SSH_LAN_JSON="true"; else EXPOSE_SSH_LAN_JSON="false"; fi
+cat > "$ROOTFS_DIR/etc/ppsa/network-policy.json" <<POLEOF
+{
+  "expose_ssh_lan": ${EXPOSE_SSH_LAN_JSON}
+}
+POLEOF
+chmod 644 "$ROOTFS_DIR/etc/ppsa/network-policy.json"
+echo "PPSA network policy: expose_ssh_lan=${EXPOSE_SSH_LAN_JSON}"
 
 # --- Copy PPSA files (always, even on cache hit — repo may have changed) ---
 echo -e "${GREEN}[4/7] Copying PPSA files...${NC}"

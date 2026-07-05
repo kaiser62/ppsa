@@ -21,6 +21,11 @@ on:
         description: 'Version string (e.g., v1.0.0-test)'
         required: true
         default: 'v0.0.0-dev'
+      expose_ssh_lan:
+        description: 'Expose SSH (22, 10022) on LAN/WAN. Default: WireGuard-only.'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -69,6 +74,8 @@ jobs:
           # in ppsa-wireguard-register.sh so unset is fine.
           PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
           PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
+          # SSH LAN/WAN exposure opt-in (default false = WireGuard-only).
+          PPSA_EXPOSE_SSH_LAN: ${{ inputs.expose_ssh_lan || 'false' }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           # sudo env_reset (the sudoers default) strips the PPSA_WG_*
@@ -170,6 +177,8 @@ jobs:
           # in ppsa-wireguard-register.sh so unset is fine.
           PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
           PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
+          # SSH LAN/WAN exposure opt-in (default false = WireGuard-only).
+          PPSA_EXPOSE_SSH_LAN: ${{ inputs.expose_ssh_lan || 'false' }}
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           # sudo env_reset strips PPSA_WG_*; -E preserves them.

@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: '6144'
+      expose_ssh_lan:
+        description: 'Expose SSH (22, 10022) on LAN/WAN. Default: WireGuard-only.'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -85,6 +90,7 @@ jobs:
           PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
           PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
           PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
+          PPSA_EXPOSE_SSH_LAN: ${{ inputs.expose_ssh_lan || 'false' }}
         run: |
           set -e
           mkdir -p installer/config/includes.binary/ppsa

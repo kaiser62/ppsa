@@ -137,7 +137,7 @@ services:
       - "10086:10086"  # UFW restricts to authorized IPs
     volumes:
       - wgdashboard_data:/opt/wireguarddashboard/app/db
-      - /etc/wireguard:/etc/wireguard:ro
+      - /etc/wireguard:/etc/wireguard
     cap_add:
       - NET_ADMIN
     sysctls:

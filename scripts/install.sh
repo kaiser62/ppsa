@@ -302,8 +302,6 @@ echo "[7/8] Configuring firewall..."
 ufw --force enable 2>/dev/null || true
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22/tcp     # SSH (primary)
-ufw allow 10022/tcp  # SSH (alternate port)
 ufw allow 51820/udp  # WireGuard tunnel (admin)
 ufw allow 51830/udp  # WireGuard tunnel (PPSA gaming)
 # Game (8211/udp, 27015/udp, 8212/tcp), Web UI (8080/tcp), and WG Dashboard
@@ -311,6 +309,30 @@ ufw allow 51830/udp  # WireGuard tunnel (PPSA gaming)
 # the WG_FRIENDS iptables chain for 10.8.0.0/24 (see ppsa-firewall-apply.sh),
 # i.e. WireGuard-friends-only, never directly from LAN/WAN.
 ufw allow from 192.168.50.0/24 to any port 8080 proto tcp  # onboarding hotspot only
+
+# SSH (22, 10022): LAN/WAN exposure is opt-in, baked at build time into
+# /etc/ppsa/network-policy.json (expose_ssh_lan, set via PPSA_EXPOSE_SSH_LAN
+# at build). Default is false — SSH stays reachable only through the
+# WG_FRIENDS chain (port 22 is in firewall.json's default allow-list), so a
+# stock build broadcasts nothing on the LAN, only the WireGuard network.
+expose_ssh_lan="false"
+if [ -f /etc/ppsa/network-policy.json ] && command -v python3 >/dev/null 2>&1; then
+    expose_ssh_lan=$(python3 -c '
+import json
+try:
+    with open("/etc/ppsa/network-policy.json") as f:
+        print(str(json.load(f).get("expose_ssh_lan", False)).lower())
+except Exception:
+    print("false")
+' 2>/dev/null || echo "false")
+fi
+if [ "$expose_ssh_lan" = "true" ]; then
+    ufw allow 22/tcp     # SSH (primary) — LAN/WAN, opt-in via build flag
+    ufw allow 10022/tcp  # SSH (alternate port) — LAN/WAN, opt-in via build flag
+    echo "  SSH: exposed on LAN/WAN (expose_ssh_lan=true) + WireGuard"
+else
+    echo "  SSH: WireGuard-only (expose_ssh_lan=false); not opened on LAN/WAN"
+fi
 
 # Install ppsa-firewall-restore.service so the WG_FRIENDS chain survives
 # reboots. ppsa-firewall-apply.sh writes its rules to /etc/ppsa/ (because
