@@ -201,11 +201,15 @@ if [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh" ] && [ -f "$PPSA_DIR/scripts/pp
     chmod +x "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh"
     cp "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" /etc/systemd/system/ppsa-wifi-onboard.service
     systemctl daemon-reload
-    systemctl enable ppsa-wifi-onboard.service
-    # Run it once on first boot (the script is idempotent and exits silently
-    # if no Wi-Fi hardware is present, so this is safe in VMs too).
-    systemctl start ppsa-wifi-onboard.service || echo "  (wifi-onboard start deferred to next boot)"
-    echo "  ppsa-wifi-onboard.service: installed and enabled"
+    # Disabled by default: NOT `systemctl enable`d (so it doesn't reconfigure
+    # networking — new NetworkManager profile, hostapd/dnsmasq — on every
+    # single boot) and NOT started here. It reconfigures the Wi-Fi interface
+    # every time it runs when no network is saved, which caused real hardware
+    # to fail to come back up cleanly on reboot. The WebUI's existing
+    # POST /api/wifi/hotspot/start already does `systemctl start
+    # ppsa-wifi-onboard.service` on demand, so onboarding is still one click
+    # away — it's just opt-in instead of on-by-default.
+    echo "  ppsa-wifi-onboard.service: installed (disabled by default — start from WebUI Wi-Fi tab)"
 else
     echo "  WARNING: ppsa-wifi-onboard.sh/.service not found at $PPSA_DIR/scripts/"
 fi
