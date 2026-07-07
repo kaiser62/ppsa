@@ -311,8 +311,15 @@ NMEOF
 if [ -f /opt/ppsa/scripts/ppsa-wifi-onboard.sh ]; then
     chmod +x /opt/ppsa/scripts/ppsa-wifi-onboard.sh
     cp /opt/ppsa/scripts/ppsa-wifi-onboard.service /etc/systemd/system/ppsa-wifi-onboard.service
-    systemctl enable ppsa-wifi-onboard.service
-    echo "PPSA Wi-Fi onboarding: enabled"
+    # Disabled by default: NOT `systemctl enable`d. This service reconfigures
+    # the Wi-Fi interface (new NetworkManager profile, hostapd/dnsmasq) every
+    # time it runs when no Wi-Fi network is saved, which on real hardware
+    # with an actual Wi-Fi card ran on every single boot and could hang or
+    # leave the interface broken, blocking subsequent boots. The WebUI's
+    # POST /api/wifi/hotspot/start still triggers `systemctl start
+    # ppsa-wifi-onboard.service` on demand, so onboarding is opt-in instead
+    # of on-by-default.
+    echo "PPSA Wi-Fi onboarding: installed (disabled by default — start from WebUI Wi-Fi tab)"
 else
     echo "WARNING: ppsa-wifi-onboard.sh not found, skipping"
 fi
