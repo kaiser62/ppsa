@@ -521,8 +521,13 @@ Before=getty@tty1.service
 # Only run on first boot. After install, the .installed flag exists and
 # we never run again.
 ConditionPathExists=!/opt/ppsa/.installed
-# Stop the getty from competing for tty1 while we run.
-Conflicts=getty@tty1.service
+# No Conflicts=getty@tty1.service here: systemd honors a unit's Conflicts=
+# as part of the boot transaction even when that unit's own ConditionPathExists
+# then skips it, which permanently blocked getty@tty1.service from ever
+# starting again on every boot after the first (no console, no login prompt,
+# looked like a hang). TTYReset=yes/TTYVHangup=yes below already force this
+# service to take over /dev/tty1 from any running getty when it does start,
+# so the explicit Conflicts= was redundant and actively harmful post-install.
 
 [Service]
 Type=simple
