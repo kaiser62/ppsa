@@ -13,9 +13,12 @@ ConditionPathExists=!/opt/ppsa/.installed
 # as part of the boot transaction even when that unit's own ConditionPathExists
 # then skips it, which permanently blocked getty@tty1.service from ever
 # starting again on every boot after the first (no console, no login prompt,
-# looked like a hang). TTYReset=yes/TTYVHangup=yes below already force this
-# service to take over /dev/tty1 from any running getty when it does start,
-# so the explicit Conflicts= was redundant and actively harmful post-install.
+# looked like a hang). getty@tty1.service instead carries its own
+# ConditionPathExists=/opt/ppsa/.installed override (see the
+# getty@tty1.service.d/autologin.conf drop-in in build-live-usb.sh), so it
+# simply doesn't start at all until install.sh has finished — no fighting
+# over the tty needed. TTYReset=yes/TTYVHangup=yes below are kept as a
+# belt-and-suspenders reclaim in case anything else is holding tty1.
 
 [Service]
 Type=simple

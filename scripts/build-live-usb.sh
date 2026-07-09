@@ -525,9 +525,12 @@ ConditionPathExists=!/opt/ppsa/.installed
 # as part of the boot transaction even when that unit's own ConditionPathExists
 # then skips it, which permanently blocked getty@tty1.service from ever
 # starting again on every boot after the first (no console, no login prompt,
-# looked like a hang). TTYReset=yes/TTYVHangup=yes below already force this
-# service to take over /dev/tty1 from any running getty when it does start,
-# so the explicit Conflicts= was redundant and actively harmful post-install.
+# looked like a hang). getty@tty1.service instead carries its own
+# ConditionPathExists=/opt/ppsa/.installed override (see the
+# getty@tty1.service.d/autologin.conf drop-in below), so it simply doesn't
+# start at all until install.sh has finished — no fighting over the tty
+# needed. TTYReset=yes/TTYVHangup=yes below are kept as a belt-and-suspenders
+# reclaim in case anything else is holding tty1.
 
 [Service]
 Type=simple
@@ -550,16 +553,33 @@ echo "PPSA first-boot progress display: enabled"
 
 # --- Autologin on tty1 (after firstboot releases it) ---
 # Standard systemd pattern: drop an override for getty@tty1.service
-# that adds --autologin ppsa and skips the login prompt. The firstboot
-# service runs Before=getty@tty1 so this only kicks in after install
-# has finished and the user has dismissed the progress screen.
+# that adds --autologin ppsa and skips the login prompt.
+#
+# ConditionPathExists=/opt/ppsa/.installed makes getty@tty1.service refuse
+# to start at all until install.sh has finished. This is what actually
+# keeps tty1 exclusive to ppsa-firstboot.service during the real first
+# boot — ppsa-firstboot.service is Type=simple, so systemd considers it
+# "started" the instant the process forks, well before it's actually
+# grabbed the tty; relying on Before=getty@tty1.service alone let getty
+# start almost simultaneously and race-kill the firstboot progress
+# display via SIGHUP a few seconds in (install itself kept running fine
+# underneath, just the TUI died). Gating getty on the .installed flag
+# instead of fighting over the tty with Conflicts= avoids that race, and
+# also avoids the opposite bug: Conflicts=getty@tty1.service on
+# ppsa-firstboot.service used to permanently block getty on every boot
+# after the first, even once ppsa-firstboot.service's own condition
+# skipped it (systemd still honors Conflicts= as part of the boot
+# transaction) — see ppsa-firstboot.service's own comment for that one.
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<AUTOLOGINEOF
+[Unit]
+ConditionPathExists=/opt/ppsa/.installed
+
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin ppsa --noclear %I \$TERM
 AUTOLOGINEOF
-echo "Autologin on tty1: enabled (ppsa)"
+echo "Autologin on tty1: enabled (ppsa), gated on /opt/ppsa/.installed"
 
 # --- profile.d: show a welcome message on each interactive login ---
 cat > /etc/profile.d/ppsa-welcome.sh <<WELCOMEEOF
