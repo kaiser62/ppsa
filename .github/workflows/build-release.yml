@@ -124,6 +124,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: PPSA ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
           body: |
             ## PPSA ${{ github.ref_name }}
 
