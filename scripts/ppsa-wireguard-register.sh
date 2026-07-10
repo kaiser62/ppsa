@@ -46,6 +46,12 @@ WG_CONF="/etc/wireguard/wg0.conf"
 WG_STATE="/run/ppsa-wireguard-ip"
 WG_INTERFACE="wg0"
 WG_TABLE_ID=51820
+# Default public endpoint (raw IP:port) of the wg-easy gaming instance.
+# Used to force an IP endpoint into wg0.conf on BOTH the API and the
+# fallback path, so wg-quick never depends on a DNS lookup at cold boot
+# (resolvers may not be ready yet, which would leave the tunnel down).
+# Config/env can still override the API path; this is the failsafe value.
+DEFAULT_PUBLIC_WG_ENDPOINT="${PPSA_WG_PUBLIC_ENDPOINT:-118.179.74.23:51830}"
 # Hardcoded failsafe config, baked into the image at build time (see
 # build-live-usb.sh / PPSA_WG_FALLBACK_CONF_B64). Used when the wg-easy
 # auto-registration API can't be reached/authenticated (bad DNS, homeserver
@@ -56,6 +62,27 @@ WG_TABLE_ID=51820
 FALLBACK_CONF="/etc/ppsa/wireguard-fallback.conf"
 
 log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${LOG_TAG} $*"; }
+
+# Ensure the server peer has PersistentKeepalive so a behind-NAT PPSA keeps
+# its UDP mapping open and stays reachable from the wg-easy hub even while
+# idle. Without it, once the appliance's router drops the idle NAT mapping,
+# the hub can no longer reach the appliance: the tunnel silently goes
+# one-way (appliance receives nothing, clients can't reach the game/WebUI)
+# until the appliance re-initiates. The wg-easy API config normally carries
+# keepalive, but the baked fallback conf may not, so enforce it on every
+# install path. The client conf has a single [Peer] (the hub) as its last
+# section, so appending lands inside it.
+ensure_keepalive() {
+    local conf="$1"
+    [[ -f "${conf}" ]] || return 0
+    if grep -qiE '^[[:space:]]*PersistentKeepalive[[:space:]]*=' "${conf}"; then
+        return 0
+    fi
+    if grep -qE '^\[Peer\]' "${conf}"; then
+        printf '\nPersistentKeepalive = 25\n' >> "${conf}"
+        log "Injected PersistentKeepalive = 25 into ${conf} (was missing)"
+    fi
+}
 
 # Install the baked-in fallback config directly and bring the tunnel up.
 # Returns 1 (no fallback available, or it also failed) so callers can still
@@ -69,6 +96,14 @@ try_fallback() {
     chmod 700 /etc/wireguard
     cp "${FALLBACK_CONF}" "${WG_CONF}"
     chmod 600 "${WG_CONF}"
+    ensure_keepalive "${WG_CONF}"
+    # Force a raw-IP endpoint so a cold-boot DNS failure can't stop the
+    # failsafe tunnel establishing. The API path does its own override with
+    # the config value; here we only have the baked default, which is fine.
+    if grep -qE '^Endpoint = ' "${WG_CONF}"; then
+        sed -i "s|^Endpoint = .*\$|Endpoint = ${DEFAULT_PUBLIC_WG_ENDPOINT}|" "${WG_CONF}"
+        log "Fallback endpoint forced to ${DEFAULT_PUBLIC_WG_ENDPOINT} (no DNS needed)"
+    fi
     if ip link show "${WG_INTERFACE}" >/dev/null 2>&1; then
         if ! wg syncconf "${WG_INTERFACE}" <(wg-quick strip "${WG_INTERFACE}") 2>/dev/null; then
             wg-quick down "${WG_INTERFACE}" 2>/dev/null || true
@@ -388,6 +423,7 @@ if ! curl -fsS -m 10 -b "${COOKIE_FILE}" \
     fail "Failed to download peer configuration" 4
 fi
 chmod 600 "${WG_CONF}"
+ensure_keepalive "${WG_CONF}"
 log "Configuration saved to ${WG_CONF}"
 
 # Override the wg-easy default endpoint with a direct IP. The wg-easy
