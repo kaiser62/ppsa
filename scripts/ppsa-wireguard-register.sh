@@ -46,9 +46,50 @@ WG_CONF="/etc/wireguard/wg0.conf"
 WG_STATE="/run/ppsa-wireguard-ip"
 WG_INTERFACE="wg0"
 WG_TABLE_ID=51820
+# Hardcoded failsafe config, baked into the image at build time (see
+# build-live-usb.sh / PPSA_WG_FALLBACK_CONF_B64). Used when the wg-easy
+# auto-registration API can't be reached/authenticated (bad DNS, homeserver
+# down, network blocking the port, etc.) so the appliance can still reach
+# its owner's network instead of sitting with no tunnel at all.
+# Lives under /etc/ppsa/ (not /opt/ppsa/) because the build re-copies the
+# whole repo into /opt/ppsa/ late in the build, which would clobber it.
+FALLBACK_CONF="/etc/ppsa/wireguard-fallback.conf"
 
 log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${LOG_TAG} $*"; }
-fail() { log "ERROR: $*"; exit "${2:-1}"; }
+
+# Install the baked-in fallback config directly and bring the tunnel up.
+# Returns 1 (no fallback available, or it also failed) so callers can still
+# report/exit with the original error.
+try_fallback() {
+    if [[ ! -f "${FALLBACK_CONF}" ]]; then
+        return 1
+    fi
+    log "Falling back to hardcoded WireGuard config at ${FALLBACK_CONF}"
+    mkdir -p /etc/wireguard
+    chmod 700 /etc/wireguard
+    cp "${FALLBACK_CONF}" "${WG_CONF}"
+    chmod 600 "${WG_CONF}"
+    if ip link show "${WG_INTERFACE}" >/dev/null 2>&1; then
+        if ! wg syncconf "${WG_INTERFACE}" <(wg-quick strip "${WG_INTERFACE}") 2>/dev/null; then
+            wg-quick down "${WG_INTERFACE}" 2>/dev/null || true
+            wg-quick up "${WG_INTERFACE}" 2>/dev/null || { log "Fallback wg-quick up failed"; return 1; }
+        fi
+    else
+        wg-quick up "${WG_INTERFACE}" 2>/dev/null || { log "Fallback wg-quick up failed"; return 1; }
+    fi
+    systemctl enable "wg-quick@${WG_INTERFACE}.service" >/dev/null 2>&1 || true
+    log "Fallback WireGuard tunnel is up"
+    return 0
+}
+
+fail() {
+    log "ERROR: $*"
+    if try_fallback; then
+        log "PPSA WireGuard registration failed, but the hardcoded failsafe config connected successfully"
+        exit 0
+    fi
+    exit "${2:-1}"
+}
 
 # Wait for the wg-easy API host to be reachable. The PPSA can boot before the
 # homeserver/VPS hosting wg-easy (race during a power outage, or the wg-easy
@@ -94,7 +135,7 @@ log "PPSA WireGuard auto-registration v${PPSA_VERSION}"
 if [[ ! -f "${CONFIG_FILE}" ]]; then
     log "Config file ${CONFIG_FILE} not found"
     log "Create it with: { \"api_url\": \"...\", \"api_user\": \"...\", \"api_password\": \"...\" }"
-    exit 1
+    fail "No wireguard.json config" 1
 fi
 
 # Read config (use python3 for proper JSON parsing — grep/sed regex is broken
@@ -151,6 +192,10 @@ fi
 # systemd auto-restart loop instead of exiting 0 quietly.
 if [[ "${ENABLED}" == "false" ]]; then
     log "WireGuard registration disabled in config (enabled=false)"
+    # Still apply the hardcoded failsafe if one was baked in — "disabled"
+    # here just means "no wg-easy auto-registration configured", not "this
+    # device should have no tunnel at all".
+    try_fallback || true
     exit 0
 fi
 

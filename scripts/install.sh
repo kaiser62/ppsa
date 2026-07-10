@@ -300,6 +300,22 @@ else
     echo "  ppsa-wg-status-snapshot: scripts not found, skipping"
 fi
 
+# PPSA WireGuard manual tunnel apply (host-side path unit that applies
+# wg-quick up/down requested by the webui's manual Connect/Disconnect
+# buttons — the webui container's own netns can't bring up wg0 itself)
+if [ -f "$PPSA_DIR/scripts/ppsa-wg-manual-apply.sh" ] && \
+   [ -f "$PPSA_DIR/scripts/ppsa-wg-manual-apply.path" ] && \
+   [ -f "$PPSA_DIR/scripts/ppsa-wg-manual-apply.service" ]; then
+    chmod +x "$PPSA_DIR/scripts/ppsa-wg-manual-apply.sh"
+    cp "$PPSA_DIR/scripts/ppsa-wg-manual-apply.service" /etc/systemd/system/
+    cp "$PPSA_DIR/scripts/ppsa-wg-manual-apply.path" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable --now ppsa-wg-manual-apply.path
+    echo "  ppsa-wg-manual-apply: installed and enabled"
+else
+    echo "  ppsa-wg-manual-apply: scripts not found, skipping"
+fi
+
 # --- Step 6: Firewall ---
 mark_step 7
 echo "[7/8] Configuring firewall..."

@@ -9,6 +9,11 @@ build/
 # CI builds never read this file; only local builds via Start-PpsaBuilder.ps1.
 wireguard.local.json
 
+# Local hardcoded WireGuard failsafe config (raw wg0.conf, gitignored — the
+# CI build reads the base64'd equivalent from the PPSA_WG_FALLBACK_CONF_B64
+# repo secret instead, never from this file).
+wireguard-fallback.local.conf
+
 # Python
 __pycache__/
 *.py[cod]

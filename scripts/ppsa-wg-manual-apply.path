@@ -1,0 +1,17 @@
+# =============================================================================
+# ppsa-wg-manual-apply.path
+# =============================================================================
+# Watches /etc/ppsa/wg-manual-request.json for changes written by the webui
+# (/api/wireguard/connect|disconnect) and triggers ppsa-wg-manual-apply.service
+# to bring wg0 up/down on the host.
+# =============================================================================
+
+[Unit]
+Description=PPSA WireGuard manual tunnel apply (watch trigger)
+
+[Path]
+PathModified=/etc/ppsa/wg-manual-request.json
+Unit=ppsa-wg-manual-apply.service
+
+[Install]
+WantedBy=multi-user.target

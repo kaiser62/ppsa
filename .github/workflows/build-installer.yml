@@ -101,6 +101,7 @@ jobs:
           PPSA_WG_PREFERRED_IP: ${{ secrets.PPSA_WG_PREFERRED_IP }}
           PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
           PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
+          PPSA_WG_FALLBACK_CONF_B64: ${{ secrets.PPSA_WG_FALLBACK_CONF_B64 }}
           PPSA_EXPOSE_SSH_LAN: ${{ inputs.expose_ssh_lan || 'false' }}
         run: |
           set -e

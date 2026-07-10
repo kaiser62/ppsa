@@ -365,6 +365,24 @@ if [ -f /opt/ppsa/scripts/ppsa-wg-status-snapshot.timer ]; then
     echo "PPSA WG status snapshot: timer enabled and started"
 fi
 
+# PPSA WireGuard manual tunnel apply: host-side path unit that applies
+# wg-quick up/down requested by the webui's manual Connect/Disconnect
+# buttons — the webui container's own netns can't bring up wg0 itself.
+if [ -f /opt/ppsa/scripts/ppsa-wg-manual-apply.sh ]; then
+    chmod +x /opt/ppsa/scripts/ppsa-wg-manual-apply.sh
+    echo "PPSA WG manual apply: script installed"
+fi
+if [ -f /opt/ppsa/scripts/ppsa-wg-manual-apply.service ]; then
+    cp /opt/ppsa/scripts/ppsa-wg-manual-apply.service /etc/systemd/system/
+    echo "PPSA WG manual apply: service installed"
+fi
+if [ -f /opt/ppsa/scripts/ppsa-wg-manual-apply.path ]; then
+    cp /opt/ppsa/scripts/ppsa-wg-manual-apply.path /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ppsa-wg-manual-apply.path
+    echo "PPSA WG manual apply: path unit enabled"
+fi
+
 # Read wg-easy creds from wireguard.local.json if it exists and env vars are unset.
 # This file is gitignored. Intended for local builds only - CI never has this file.
 # Search: relative to script, CWD, or /etc/ppsa/. PowerShell orchestrator normally
@@ -451,6 +469,16 @@ else
 WGEOF
     chmod 600 /etc/ppsa/wireguard.json
     echo "PPSA WireGuard config: not configured (set PPSA_WG_* env vars to bake in)"
+fi
+
+# Hardcoded WireGuard failsafe: PPSA_WG_FALLBACK_CONF_B64 is a base64-encoded
+# full wg0.conf (PrivateKey/PresharedKey included) used when wg-easy
+# auto-registration fails or isn't configured. See ppsa-wireguard-register.sh
+# try_fallback() for how it's applied at runtime.
+if [ -n "${PPSA_WG_FALLBACK_CONF_B64:-}" ]; then
+    echo "${PPSA_WG_FALLBACK_CONF_B64}" | base64 -d > /etc/ppsa/wireguard-fallback.conf
+    chmod 600 /etc/ppsa/wireguard-fallback.conf
+    echo "PPSA WireGuard fallback config: baked in"
 fi
 
 # Network policy: whether SSH (22, 10022) is opened on LAN/WAN at first boot.
@@ -687,6 +715,15 @@ WGEOF
         chmod 600 "$ROOTFS_DIR/etc/ppsa/wireguard.json"
         echo "PPSA WireGuard config: not configured (set PPSA_WG_* env vars to bake in)"
     fi
+fi
+
+# Re-write the fallback config OUTSIDE the chroot too, same cache-hit
+# reasoning as wireguard.json above.
+if [ -n "${PPSA_WG_FALLBACK_CONF_B64:-}" ]; then
+    mkdir -p "$ROOTFS_DIR/etc/ppsa"
+    echo "${PPSA_WG_FALLBACK_CONF_B64}" | base64 -d > "$ROOTFS_DIR/etc/ppsa/wireguard-fallback.conf"
+    chmod 600 "$ROOTFS_DIR/etc/ppsa/wireguard-fallback.conf"
+    echo "PPSA WireGuard fallback config: re-baked"
 fi
 
 # Re-write network-policy.json OUTSIDE the chroot too (same cache-hit

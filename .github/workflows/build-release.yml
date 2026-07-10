@@ -80,6 +80,9 @@ jobs:
           # in ppsa-wireguard-register.sh so unset is fine.
           PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
           PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
+          # Hardcoded WireGuard failsafe config (base64 full wg0.conf, used
+          # when auto-registration above fails or is unconfigured).
+          PPSA_WG_FALLBACK_CONF_B64: ${{ secrets.PPSA_WG_FALLBACK_CONF_B64 }}
           # SSH LAN/WAN exposure opt-in (default false = WireGuard-only).
           PPSA_EXPOSE_SSH_LAN: ${{ inputs.expose_ssh_lan || 'false' }}
         run: |
@@ -179,6 +182,9 @@ jobs:
           # in ppsa-wireguard-register.sh so unset is fine.
           PPSA_WG_LAN_ENDPOINT: ${{ secrets.PPSA_WG_LAN_ENDPOINT }}
           PPSA_WG_PUBLIC_ENDPOINT: ${{ secrets.PPSA_WG_PUBLIC_ENDPOINT }}
+          # Hardcoded WireGuard failsafe config (base64 full wg0.conf, used
+          # when auto-registration above fails or is unconfigured).
+          PPSA_WG_FALLBACK_CONF_B64: ${{ secrets.PPSA_WG_FALLBACK_CONF_B64 }}
           # SSH LAN/WAN exposure opt-in (default false = WireGuard-only).
           PPSA_EXPOSE_SSH_LAN: ${{ inputs.expose_ssh_lan || 'false' }}
         run: |

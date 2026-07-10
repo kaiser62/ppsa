@@ -1,0 +1,16 @@
+# =============================================================================
+# ppsa-wg-manual-apply.service
+# =============================================================================
+# One-shot helper triggered by ppsa-wg-manual-apply.path: applies a
+# webui-requested wg-quick up/down on the host (the webui container's own
+# netns can't do this itself, see ppsa-wg-manual-apply.sh).
+# =============================================================================
+
+[Unit]
+Description=PPSA WireGuard manual tunnel apply
+ConditionPathExists=/opt/ppsa/scripts/ppsa-wg-manual-apply.sh
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ppsa/scripts/ppsa-wg-manual-apply.sh
+Nice=10

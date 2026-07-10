@@ -465,7 +465,7 @@
       <div class="section" id="wg-config-section">
         <h2>Configure Tunnel</h2>
         <p style="color:var(--text-muted);font-size:0.8rem;margin-bottom:1rem">
-          Set up a WireGuard tunnel to an Oracle VPS gateway. 
+          Set up a WireGuard tunnel to an Oracle VPS gateway.
           First run <code>oracle/vps-setup.sh</code> on the VPS to get its public key and endpoint.
         </p>
         <div class="form-row">
@@ -473,6 +473,27 @@
           <div class="form-group"><label>VPS Public Key</label><input id="wg-vps-key" placeholder="Base64 public key from VPS setup"></div>
         </div>
         <button id="wg-connect-btn" onclick="wgConnect()">Connect</button>
+
+        <p style="color:var(--text-muted);font-size:0.8rem;margin:1rem 0 0.5rem">
+          Or upload a full <code>.conf</code> file (e.g. exported from wg-easy) instead:
+        </p>
+        <div class="form-row">
+          <div class="form-group"><input type="file" id="wg-conf-file" accept=".conf,text/plain"></div>
+          <button id="wg-upload-btn" class="outline" onclick="wgUploadConfig()">Upload &amp; Connect</button>
+        </div>
+      </div>
+
+      <!-- Parsed config details -->
+      <div class="section" id="wg-parsed-section" style="display:none">
+        <h2>Config Details</h2>
+        <div class="grid">
+          <div class="card"><h3>Address</h3><div class="value" id="wg-p-address" style="font-size:0.9rem">-</div></div>
+          <div class="card"><h3>DNS</h3><div class="value" id="wg-p-dns" style="font-size:0.9rem">-</div></div>
+          <div class="card"><h3>MTU</h3><div class="value" id="wg-p-mtu" style="font-size:0.9rem">-</div></div>
+          <div class="card"><h3>Allowed IPs</h3><div class="value" id="wg-p-allowed" style="font-size:0.9rem">-</div></div>
+          <div class="card"><h3>Keepalive</h3><div class="value" id="wg-p-keepalive" style="font-size:0.9rem">-</div></div>
+          <div class="card"><h3>Preshared Key</h3><div class="value" id="wg-p-psk" style="font-size:0.9rem">-</div></div>
+        </div>
       </div>
 
       <!-- Detail -->
@@ -1072,6 +1093,16 @@ async function wgStatus() {
       document.getElementById('wg-endpoint').value = config.config.vps_endpoint || '';
       document.getElementById('wg-vps-key').value = config.config.vps_public_key || '';
       document.getElementById('wg-ppsa-key').textContent = config.config.ppsa_public_key || '-';
+
+      document.getElementById('wg-p-address').textContent = config.config.address || '-';
+      document.getElementById('wg-p-dns').textContent = config.config.dns || '-';
+      document.getElementById('wg-p-mtu').textContent = config.config.mtu || '-';
+      document.getElementById('wg-p-allowed').textContent = config.config.allowed_ips || '-';
+      document.getElementById('wg-p-keepalive').textContent = config.config.keepalive ? config.config.keepalive + 's' : '-';
+      document.getElementById('wg-p-psk').textContent = config.config.has_preshared_key ? 'Yes' : 'No';
+      document.getElementById('wg-parsed-section').style.display = '';
+    } else {
+      document.getElementById('wg-parsed-section').style.display = 'none';
     }
 
     // Detail dump
@@ -1112,6 +1143,39 @@ async function wgConnect() {
   } finally {
     document.getElementById('wg-connect-btn').disabled = false;
     document.getElementById('wg-connect-btn').textContent = 'Connect';
+  }
+}
+
+async function wgUploadConfig() {
+  const fileInput = document.getElementById('wg-conf-file');
+  const file = fileInput.files[0];
+  if (!file) {
+    showAlert('Choose a .conf file first', 'error', 'wg-alert');
+    return;
+  }
+
+  const btn = document.getElementById('wg-upload-btn');
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const data = await api('/api/wireguard/upload', { method: 'POST', body: formData });
+
+    if (data.status === 'connected') {
+      showAlert('Tunnel connected from uploaded config.', 'success', 'wg-alert');
+    } else {
+      showAlert('Config uploaded. ' + (data.detail || ''), 'info', 'wg-alert');
+    }
+
+    fileInput.value = '';
+    setTimeout(wgStatus, 2000);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'wg-alert');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upload & Connect';
   }
 }
 

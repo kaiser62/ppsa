@@ -66,7 +66,10 @@ async def lifespan(app: FastAPI):
         }))
     # Auto-start WireGuard tunnel if config exists
     if WG_CONF.exists():
-        _wg_run_raw(["wg-quick", "up", "wg0"])
+        try:
+            await _wg_apply("up")
+        except HTTPException:
+            pass  # host may not have applied it yet; health monitor will retry
     # Background tunnel health monitor
     monitor_task = asyncio.create_task(_wg_health_monitor())
     yield
@@ -101,12 +104,15 @@ async def metrics():
         lines.append('# HELP ppsa_player_count Current number of connected players')
         lines.append('# TYPE ppsa_player_count gauge')
         lines.append('ppsa_player_count -1')
-    # WireGuard tunnel status
+    # WireGuard tunnel status (read the host-written snapshot — this
+    # container has no wg0 interface in its own netns, see _wg_apply)
+    active = 0
     try:
-        wg = _wg_run_raw(["wg", "show", "wg0"])
-        active = 1 if (wg is not None and "latest handshake" in wg) else 0
+        snapshot = json.loads(Path("/etc/ppsa/wg-status.json").read_text())
+        if any("latest_handshake" in p for p in snapshot.get("peers", [])):
+            active = 1
     except Exception:
-        active = 0
+        pass
     lines.append('# HELP ppsa_tunnel_active WireGuard tunnel handshake status (1=active)')
     lines.append('# TYPE ppsa_tunnel_active gauge')
     lines.append(f'ppsa_tunnel_active {active}')
@@ -635,38 +641,69 @@ WG_CONF = WG_DIR / "wg0.conf"
 WG_KEY = WG_DIR / "ppsa.key"
 WG_PUB = WG_DIR / "ppsa.pub"
 
-def _wg_run(cmd: list[str]) -> str:
-    """Run a wg or wg-quick command, return stdout (raises HTTPException on failure)."""
-    try:
-        return subprocess.check_output(cmd, timeout=15, stderr=subprocess.STDOUT, text=True).strip()
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=e.output or str(e))
-    except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="wireguard-tools not installed in container")
+WG_REQUEST_FILE = Path("/etc/ppsa/wg-manual-request.json")
+WG_RESULT_FILE = Path("/etc/ppsa/wg-manual-result.json")
 
-def _wg_run_raw(cmd: list[str]) -> str | None:
-    """Run a wg/wg-quick command, return stdout or None on failure (safe for background use)."""
-    try:
-        return subprocess.check_output(cmd, timeout=15, stderr=subprocess.STDOUT, text=True).strip()
-    except Exception:
-        return None
+async def _wg_apply(action: str, timeout: float = 15.0) -> str:
+    """Request wg-quick up/down on the HOST and wait for the result.
+
+    The webui container runs in its own network namespace — `wg-quick up
+    wg0` run in-container creates the interface where the host can never
+    see it. Instead, write a request file that ppsa-wg-manual-apply.path
+    (a host-side systemd path unit) picks up and applies with the host's
+    own wg-quick, then poll the result file it writes back.
+    """
+    import uuid
+    req_id = str(uuid.uuid4())
+    WG_REQUEST_FILE.parent.mkdir(parents=True, exist_ok=True)
+    WG_REQUEST_FILE.write_text(json.dumps({"id": req_id, "action": action}))
+
+    loop = asyncio.get_event_loop()
+    stop_at = loop.time() + timeout
+    while loop.time() < stop_at:
+        if WG_RESULT_FILE.exists():
+            try:
+                result = json.loads(WG_RESULT_FILE.read_text())
+            except (json.JSONDecodeError, OSError):
+                result = {}
+            if result.get("id") == req_id:
+                if result.get("status") == "ok":
+                    return result.get("detail", "")
+                raise HTTPException(status_code=500, detail=result.get("detail", "wg-quick failed on host"))
+        await asyncio.sleep(0.5)
+    raise HTTPException(status_code=504, detail="Timed out waiting for host to apply WireGuard change (is ppsa-wg-manual-apply.path enabled?)")
 
 async def _wg_health_monitor():
-    """Background: check tunnel every 60s, reconnect after 3 consecutive failures."""
+    """Background: check tunnel every 60s, reconnect after 3 consecutive failures.
+
+    Reads the host-written wg-status.json snapshot rather than running
+    `wg show wg0` in-container — the container has no wg0 interface in its
+    own netns (see _wg_apply), so a local `wg show` would always come back
+    empty and falsely flag every check as a failure.
+    """
     failures = 0
+    snapshot_path = Path("/etc/ppsa/wg-status.json")
     while True:
         await asyncio.sleep(60)
         if not WG_CONF.exists():
             failures = 0
             continue
-        output = _wg_run_raw(["wg", "show", "wg0"])
-        if output is None or "latest handshake" not in output:
+        has_handshake = False
+        if snapshot_path.exists():
+            try:
+                snapshot = json.loads(snapshot_path.read_text())
+                has_handshake = any("latest_handshake" in p for p in snapshot.get("peers", []))
+            except (json.JSONDecodeError, OSError):
+                pass
+        if not has_handshake:
             failures += 1
         else:
             failures = 0
         if failures >= 3:
-            _wg_run_raw(["wg-quick", "down", "wg0"])
-            _wg_run_raw(["wg-quick", "up", "wg0"])
+            try:
+                await _wg_apply("up")
+            except HTTPException:
+                pass
             failures = 0
 
 @app.get("/api/wireguard/status")
@@ -737,32 +774,71 @@ async def wireguard_status(_user: str = Depends(require_auth)):
         "snapshot_at": snapshot.get("snapshot_at"),
     }
 
+def _parse_wg_conf(text: str) -> dict:
+    """Parse a wg0.conf-style config into its human-relevant fields.
+
+    Never returns PrivateKey/PresharedKey values — only whether a
+    PresharedKey is present, for display purposes.
+    """
+    section = None
+    info = {
+        "address": "", "dns": "", "mtu": "",
+        "peer_public_key": "", "peer_endpoint": "",
+        "allowed_ips": "", "keepalive": "", "has_preshared_key": False,
+    }
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            section = line.strip("[]").strip().lower()
+            continue
+        if "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key, val = key.strip().lower(), val.strip()
+        if section == "interface":
+            if key == "address":
+                info["address"] = val
+            elif key == "dns":
+                info["dns"] = val
+            elif key == "mtu":
+                info["mtu"] = val
+        elif section == "peer":
+            if key == "publickey":
+                info["peer_public_key"] = val
+            elif key == "endpoint":
+                info["peer_endpoint"] = val
+            elif key == "allowedips":
+                info["allowed_ips"] = val
+            elif key == "persistentkeepalive":
+                info["keepalive"] = val
+            elif key == "presharedkey":
+                info["has_preshared_key"] = True
+    return info
+
 @app.get("/api/wireguard/config")
 async def wireguard_get_config(_user: str = Depends(require_auth)):
     """Return the current WireGuard client configuration (sans private key)."""
     if not WG_CONF.exists():
         return {"configured": False, "config": {}}
 
-    text = WG_CONF.read_text()
-    # Parse key fields, mask private key
-    vps_endpoint = ""
-    vps_pubkey = ""
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("Endpoint"):
-            vps_endpoint = line.split("=", 1)[1].strip()
-        if line.startswith("PublicKey") and "=" in line:
-            vps_pubkey = line.split("=", 1)[1].strip()
-
+    parsed = _parse_wg_conf(WG_CONF.read_text())
     ppsa_pub = WG_PUB.read_text().strip() if WG_PUB.exists() else ""
 
     return {
         "configured": True,
         "config": {
-            "vps_endpoint": vps_endpoint,
-            "vps_public_key": vps_pubkey,
+            "vps_endpoint": parsed["peer_endpoint"],
+            "vps_public_key": parsed["peer_public_key"],
             "ppsa_public_key": ppsa_pub,
             "interface": "wg0",
+            "address": parsed["address"],
+            "dns": parsed["dns"],
+            "mtu": parsed["mtu"],
+            "allowed_ips": parsed["allowed_ips"],
+            "keepalive": parsed["keepalive"],
+            "has_preshared_key": parsed["has_preshared_key"],
         }
     }
 
@@ -801,32 +877,76 @@ PersistentKeepalive = 25
     WG_CONF.write_text(conf)
     WG_CONF.chmod(0o600)
 
-    # Start tunnel
+    # Start tunnel (applied on the host — see _wg_apply)
     try:
-        _wg_run(["wg-quick", "up", "wg0"])
-    except Exception as e:
+        detail = await _wg_apply("up")
+    except HTTPException as e:
         return {
             "status": "config_written",
-            "detail": f"Config written but tunnel start failed: {e}",
+            "detail": f"Config written but tunnel start failed: {e.detail}",
             "ppsa_public_key": pub_key,
         }
 
     return {
         "status": "connected",
-        "detail": "WireGuard tunnel started",
+        "detail": detail or "WireGuard tunnel started",
         "ppsa_public_key": pub_key,
+    }
+
+@app.post("/api/wireguard/upload")
+async def wireguard_upload_config(file: UploadFile, _user: str = Depends(require_auth)):
+    """Accept a full wg0.conf (e.g. exported from wg-easy or another peer)
+    and use it directly, instead of the generate-keys-and-paste-peer flow."""
+    text = (await file.read()).decode("utf-8", errors="replace")
+
+    if "[interface]" not in text.lower() or "privatekey" not in text.lower():
+        raise HTTPException(status_code=400, detail="Not a valid WireGuard config: missing [Interface]/PrivateKey")
+    parsed = _parse_wg_conf(text)
+    if not parsed["peer_public_key"] or not parsed["peer_endpoint"]:
+        raise HTTPException(status_code=400, detail="Not a valid WireGuard config: missing Peer PublicKey/Endpoint")
+
+    WG_DIR.mkdir(parents=True, exist_ok=True)
+    WG_CONF.write_text(text)
+    WG_CONF.chmod(0o600)
+
+    # Derive and persist our own pubkey from the uploaded private key so the
+    # "PPSA Public Key" display stays consistent with the manual-paste flow.
+    priv_key = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.lower().startswith("privatekey") and "=" in line:
+            priv_key = line.split("=", 1)[1].strip()
+            break
+    if priv_key:
+        WG_KEY.write_text(priv_key + "\n")
+        WG_KEY.chmod(0o600)
+        pub = subprocess.check_output(["wg", "pubkey"], input=priv_key, text=True).strip()
+        WG_PUB.write_text(pub + "\n")
+        WG_PUB.chmod(0o600)
+
+    try:
+        detail = await _wg_apply("up")
+    except HTTPException as e:
+        return {
+            "status": "config_written",
+            "detail": f"Config uploaded but tunnel start failed: {e.detail}",
+            "config": parsed,
+        }
+
+    return {
+        "status": "connected",
+        "detail": detail or "WireGuard tunnel started",
+        "config": parsed,
     }
 
 @app.post("/api/wireguard/disconnect")
 async def wireguard_disconnect(_user: str = Depends(require_auth)):
-    """Stop the WireGuard tunnel."""
+    """Stop the WireGuard tunnel (applied on the host — see _wg_apply)."""
     try:
-        _wg_run(["wg-quick", "down", "wg0"])
+        await _wg_apply("down")
         return {"status": "disconnected", "detail": "Tunnel stopped"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
+    except HTTPException as e:
+        return {"status": "error", "detail": e.detail}
 
 
 # ---------------------------------------------------------------------------
