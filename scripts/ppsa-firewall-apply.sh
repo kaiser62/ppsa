@@ -21,12 +21,9 @@ set -u
 
 CHAIN="WG_FRIENDS"
 WG_NET="10.8.0.0/24"
-RULES_V4="/etc/iptables/rules.v4"
 # webui_data volume is created by docker compose. The exact name is
 # compose_webui_data (compose project prefix + service name + _data).
 WEBDATA="/var/lib/docker/volumes/compose_webui_data/_data"
-
-mkdir -p "$(dirname "$RULES_V4")" 2>/dev/null || true
 
 # --- Locate config file (read-only) ---
 # Prefer /etc/ppsa/firewall.json (canonical), then the webui container's
@@ -110,22 +107,20 @@ if ! iptables -C INPUT -s "$WG_NET" -j "$CHAIN" 2>/dev/null; then
   iptables -I INPUT 1 -s "$WG_NET" -j "$CHAIN"
 fi
 
-# --- Persist rules ---
-# Try multiple locations in order of preference. The /etc/ppsa path is
-# special-cased because we have a systemd service (ppsa-firewall-restore)
-# that restores from there at boot. When called from the WebUI chroot
-# /etc/iptables is read-only, so /etc/ppsa/ is the real persistent home.
-if command -v netfilter-persistent >/dev/null 2>&1; then
-  netfilter-persistent save >/dev/null 2>&1
-elif command -v iptables-save >/dev/null 2>&1; then
-  mkdir -p /etc/iptables 2>/dev/null || true
-  if iptables-save > /etc/iptables/rules.v4 2>/dev/null; then
-    : # canonical path works
-  fi
-fi
-# Always write a copy to /etc/ppsa/ (runs regardless of persistence mechanism).
-# The restore service (ppsa-firewall-restore.service) checks this path at boot.
-mkdir -p /etc/ppsa 2>/dev/null || true
-iptables-save > /etc/ppsa/iptables.rules.v4 2>/dev/null || true
+# --- Persistence ---
+# Deliberately NO `iptables-save` snapshot here. The source of truth for the
+# WG_FRIENDS chain is firewall.json (persisted under /etc/ppsa or the webui
+# data volume); ppsa-firewall-restore.service re-runs THIS script at boot to
+# rebuild the chain from that config. We must never persist/restore the full
+# iptables table, because it also captures Docker's per-container DNAT rules
+# (published-port forwarding to the WebUI container's bridge IP). Those IPs
+# change on every boot, so a restored snapshot pins the DNAT to a stale,
+# now-dead address and silently breaks WebUI reachability over WireGuard/LAN
+# (localhost + direct container IP keep working, masking it). Docker
+# regenerates its own rules each boot; we leave them alone.
+#
+# Clean up any stale snapshots written by older versions so a downgraded /
+# lingering restore unit can't reinstate the broken behaviour.
+rm -f /etc/iptables/rules.v4 /etc/ppsa/iptables.rules.v4 2>/dev/null || true
 
 echo "WG_FRIENDS rebuilt: TCP=[$TCP] UDP=[$UDP] ICMP=$ICMP"

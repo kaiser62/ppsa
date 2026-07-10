@@ -1,28 +1,26 @@
 [Unit]
-Description=PPSA - Restore WG_FRIENDS iptables rules at boot
+Description=PPSA - Reapply WG_FRIENDS iptables chain at boot
 Documentation=https://github.com/kaiser62/ppsa
-# Restore after the network is up so the WG subnet (10.8.0.0/24) referenced
-# in the chain actually exists, and after docker so any compose-managed
-# iptables work is settled.
-After=network-online.target docker.service
-Wants=network-online.target
-# Only run if we actually have a saved ruleset in either location:
-#   - /etc/iptables/rules.v4 (canonical, written by `iptables-save`)
-#   - /etc/ppsa/iptables.rules.v4 (fallback, written when /etc/iptables is RO)
-# systemd's `|` separator gives OR semantics across multiple condition lines.
-# This makes the service a no-op on fresh installs where the apply script
-# has not yet been run.
-ConditionPathExists=|/etc/iptables/rules.v4
-ConditionPathExists=|/etc/ppsa/iptables.rules.v4
+# Reapply AFTER docker and the compose stack are up. This is critical:
+# Docker generates its own nat/FORWARD rules (including the published-port
+# DNAT for the WebUI container) fresh on every boot, and those rules point
+# at whatever bridge IP the container gets *this* boot. We must not clobber
+# them. Older versions did a full `iptables-restore` of a saved snapshot,
+# which froze Docker's DNAT at the container's *first-boot* IP; after a
+# reboot the container gets a new IP, so the restored DNAT pointed at a dead
+# address and the WebUI became unreachable over WireGuard/LAN (only
+# localhost + direct container IP still worked). Instead we simply re-run
+# the idempotent apply script, which rebuilds ONLY the WG_FRIENDS chain and
+# its INPUT jump from firewall.json and leaves Docker's rules untouched.
+After=network-online.target docker.service ppsa-docker-compose.service
+Wants=network-online.target ppsa-docker-compose.service
+# No-op on installs where the apply script isn't present yet.
+ConditionPathExists=/opt/ppsa/scripts/ppsa-firewall-apply.sh
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Try canonical first, then /etc/ppsa. Both locations are written by
-# ppsa-firewall-apply.sh; we accept either at restore time so a manual
-# `iptables-save > /etc/iptables/rules.v4` from the host shell still
-# takes effect.
-ExecStart=/bin/sh -c 'if [ -f /etc/iptables/rules.v4 ]; then iptables-restore < /etc/iptables/rules.v4; elif [ -f /etc/ppsa/iptables.rules.v4 ]; then iptables-restore < /etc/ppsa/iptables.rules.v4; fi'
+ExecStart=/opt/ppsa/scripts/ppsa-firewall-apply.sh
 User=root
 
 [Install]
