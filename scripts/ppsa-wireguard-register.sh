@@ -84,6 +84,22 @@ ensure_keepalive() {
     fi
 }
 
+# Guard against a full-tunnel AllowedIPs (0.0.0.0/0 or ::/0) in the peer
+# config. This appliance is a SERVER, not a VPN client: default-routing all
+# its traffic through wg0 would blackhole its own LAN/internet and break
+# Docker's outbound networking (image pulls, watchtower, backups). The
+# wg-easy gaming client hands out AllowedIPs = 10.8.0.0/24; if anything (a
+# bad hub setting or a hand-edited fallback conf) puts a default route here,
+# clamp it back to the WG subnet so the box stays functional and reachable.
+ensure_no_full_tunnel() {
+    local conf="$1"
+    [[ -f "${conf}" ]] || return 0
+    if grep -qiE '^[[:space:]]*AllowedIPs[[:space:]]*=.*(0\.0\.0\.0/0|::/0)' "${conf}"; then
+        sed -i -E 's|^([[:space:]]*AllowedIPs[[:space:]]*=).*$|\1 10.8.0.0/24|' "${conf}"
+        log "Clamped full-tunnel AllowedIPs to 10.8.0.0/24 (appliance must not default-route through wg0)"
+    fi
+}
+
 # Install the baked-in fallback config directly and bring the tunnel up.
 # Returns 1 (no fallback available, or it also failed) so callers can still
 # report/exit with the original error.
@@ -97,6 +113,7 @@ try_fallback() {
     cp "${FALLBACK_CONF}" "${WG_CONF}"
     chmod 600 "${WG_CONF}"
     ensure_keepalive "${WG_CONF}"
+    ensure_no_full_tunnel "${WG_CONF}"
     # Force a raw-IP endpoint so a cold-boot DNS failure can't stop the
     # failsafe tunnel establishing. The API path does its own override with
     # the config value; here we only have the baked default, which is fine.
@@ -424,6 +441,7 @@ if ! curl -fsS -m 10 -b "${COOKIE_FILE}" \
 fi
 chmod 600 "${WG_CONF}"
 ensure_keepalive "${WG_CONF}"
+ensure_no_full_tunnel "${WG_CONF}"
 log "Configuration saved to ${WG_CONF}"
 
 # Override the wg-easy default endpoint with a direct IP. The wg-easy

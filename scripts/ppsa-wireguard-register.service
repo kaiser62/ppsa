@@ -22,7 +22,15 @@ Description=PPSA WireGuard Auto-Registration (register host as wg-easy peer)
 Documentation=https://github.com/kaiser62/ppsa
 # Need network-online so we can reach the wg-easy API; the script itself
 # doesn't bind to any port.
-After=network-online.target
+#
+# Order AFTER wg-quick@wg0 so that on a reboot the tunnel is already up from
+# the persisted /etc/wireguard/wg0.conf before this runs. The script then
+# takes its atomic `wg syncconf` path on the existing interface instead of
+# racing wg-quick's fresh bring-up. `After=` is ordering-only: if wg-quick@wg0
+# isn't enabled yet (very first boot, before this script enables it), it
+# simply has no effect. We deliberately do NOT `Wants=` it, so we never pull
+# the tunnel up before it has ever been configured.
+After=network-online.target wg-quick@wg0.service
 Wants=network-online.target
 
 [Service]
@@ -32,8 +40,12 @@ ExecStart=/opt/ppsa/scripts/ppsa-wireguard-register.sh
 # Script can take 30-60s on a cold network (wg-quick handshake etc.).
 # Allow headroom for slow DNS or first-time wg-easy login.
 TimeoutStartSec=120s
-# Restart on transient network failures (wg-easy host temporarily down,
-# DNS hiccup, DHCP race). 60s backoff avoids tight retry loops.
+# Best-effort retry on a transient early-boot network failure (wg-easy host
+# briefly down, DNS hiccup, DHCP race) *when no fallback conf is present*.
+# Note: the script's normal resilience is the baked failsafe config — on any
+# failure it runs try_fallback() and exits 0 if that conf exists, so this
+# Restart only ever fires on a box with no fallback and a still-transient
+# network. 60s backoff avoids tight retry loops.
 Restart=on-failure
 RestartSec=60s
 
