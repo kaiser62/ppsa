@@ -1,0 +1,31 @@
+# =============================================================================
+# ppsa-docker-compose.service
+# =============================================================================
+# Safety net: re-applies the Docker Compose stack on every boot (not just
+# first boot). install.sh's `docker compose up -d` only ever runs once,
+# gated by /opt/ppsa/.installed. Each container has `restart: unless-stopped`,
+# but that only helps Docker resume containers it still has metadata for —
+# if that metadata is lost (e.g. an unclean shutdown/power loss corrupting
+# Docker's container store), nothing recreates the stack on its own and the
+# appliance comes back up with zero containers running.
+#
+# `docker compose up -d` is idempotent: if the stack is already running and
+# unchanged, this is a fast no-op. Safe to run unconditionally every boot.
+# =============================================================================
+
+[Unit]
+Description=PPSA Docker Compose stack (re-apply on every boot)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+ConditionPathExists=/opt/ppsa/.installed
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ppsa
+ExecStart=/usr/bin/docker compose -f /opt/ppsa/compose/docker-compose.yml up -d
+RemainAfterExit=yes
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

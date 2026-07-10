@@ -316,6 +316,20 @@ else
     echo "  ppsa-wg-manual-apply: scripts not found, skipping"
 fi
 
+# PPSA Docker Compose stack: re-apply on every boot (safety net for
+# Docker container-metadata loss after an unclean shutdown/power loss —
+# restart: unless-stopped alone can't help if Docker forgot the
+# containers existed at all; docker compose up -d is idempotent so this
+# is a no-op when the stack is already healthy).
+if [ -f "$PPSA_DIR/scripts/ppsa-docker-compose.service" ]; then
+    cp "$PPSA_DIR/scripts/ppsa-docker-compose.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ppsa-docker-compose.service
+    echo "  ppsa-docker-compose: installed and enabled"
+else
+    echo "  ppsa-docker-compose.service not found, skipping"
+fi
+
 # --- Step 6: Firewall ---
 mark_step 7
 echo "[7/8] Configuring firewall..."

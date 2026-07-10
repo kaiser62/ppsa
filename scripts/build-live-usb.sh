@@ -383,6 +383,16 @@ if [ -f /opt/ppsa/scripts/ppsa-wg-manual-apply.path ]; then
     echo "PPSA WG manual apply: path unit enabled"
 fi
 
+# PPSA Docker Compose stack: re-apply on every boot (safety net for Docker
+# container-metadata loss after an unclean shutdown/power loss). Idempotent
+# — a no-op when the stack is already healthy.
+if [ -f /opt/ppsa/scripts/ppsa-docker-compose.service ]; then
+    cp /opt/ppsa/scripts/ppsa-docker-compose.service /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ppsa-docker-compose.service
+    echo "PPSA Docker Compose stack: re-apply-on-boot service enabled"
+fi
+
 # Read wg-easy creds from wireguard.local.json if it exists and env vars are unset.
 # This file is gitignored. Intended for local builds only - CI never has this file.
 # Search: relative to script, CWD, or /etc/ppsa/. PowerShell orchestrator normally
