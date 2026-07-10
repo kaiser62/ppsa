@@ -39,6 +39,18 @@ User=root
 Restart=no
 # Give the user 30s to press a key, then exit (handled inside the script).
 TimeoutStopSec=35
+# getty@tty1.service's own ConditionPathExists=/opt/ppsa/.installed is only
+# evaluated once, as part of the initial boot transaction — at that point
+# .installed doesn't exist yet, so getty gets marked "skipped" and nothing
+# re-queues a start job for it later. Waiting for systemd to notice on its
+# own left tty1 permanently blank/unresponsive after this service exited
+# (the OS was fully alive underneath — journal kept ticking — but nothing
+# was attached to the console). By the time this service actually stops,
+# install.sh has long since created .installed (that's why the "PPSA is
+# ready" screen was showing), so explicitly starting getty here is safe
+# and makes the handoff deterministic instead of relying on systemd to
+# retry a condition check that never gets re-triggered.
+ExecStopPost=/bin/systemctl start getty@tty1.service
 
 [Install]
 WantedBy=multi-user.target
