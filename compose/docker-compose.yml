@@ -181,8 +181,18 @@ services:
     environment:
       BACKUP_CRON_EXPRESSION: ${BACKUP_SCHEDULE:-0 3 * * *}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
-      BACKUP_PRUNING_PREFIX: backup-
-      BACKUP_FILENAME: "ppsa-{{ .ContainerName }}-{{ .Now | date \"20060102-150405\" }}.tar.gz"
+      # offen v2 BACKUP_FILENAME uses strftime tokens (%Y%m%d), NOT Go
+      # template functions — `{{ .Now | date ... }}` made every backup run
+      # die with `template: extension:1: function "date" not defined`.
+      # Pruning prefix must match the filename prefix or retention never
+      # deletes anything.
+      BACKUP_PRUNING_PREFIX: ppsa-
+      BACKUP_FILENAME: "ppsa-%Y%m%d-%H%M%S.tar.gz"
+      # Steam's transient dirs contain multi-GB files that grow while
+      # SteamCMD downloads/updates the game; tar-ing a growing file aborts
+      # the whole backup with `archive/tar: write too long`. They're
+      # re-downloadable caches anyway — never worth backing up.
+      BACKUP_EXCLUDE_REGEXP: "steamapps/(downloading|temp|workshop)"
       NOTIFY_URLS: ${DISCORD_WEBHOOK_URL:-}
     healthcheck:
       # ponytail: image is alpine:3.24 (NOT scratch — busybox shell + kill are
