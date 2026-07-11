@@ -433,6 +433,15 @@ if cfg.get("enabled"):
     emit("PPSA_WG_PEER_NAME",  cfg.get("peer_name", "ppsa-server"))
     if cfg.get("preferred_ip"):
         emit("PPSA_WG_PREFERRED_IP", cfg["preferred_ip"])
+    # lan_endpoint / public_endpoint feed register.sh's handshake-verified
+    # endpoint selection. Baking lan_endpoint lets a PPSA that sits on the
+    # SAME LAN as the wg-easy hub fall back to the hub's LAN IP when the
+    # public endpoint stays silent (router NAT-hairpin fails), so the tunnel
+    # comes up and survives reboot without manual `wg set`.
+    if cfg.get("lan_endpoint"):
+        emit("PPSA_WG_LAN_ENDPOINT", cfg["lan_endpoint"])
+    if cfg.get("public_endpoint"):
+        emit("PPSA_WG_PUBLIC_ENDPOINT", cfg["public_endpoint"])
 PYEOF
   if [ $? -eq 0 ] && [ -s "$WG_PARSER" ] && grep -q '^export ' "$WG_PARSER"; then
     # shellcheck disable=SC1090
@@ -693,31 +702,24 @@ fi  # end of PPSA_SKIP_BOOTSTRAP conditional
 mkdir -p "$ROOTFS_DIR/etc/ppsa"
 chmod 755 "$ROOTFS_DIR/etc/ppsa"
 if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PPSA_WG_API_PASS:-}" ]; then
-    if [ -n "${PPSA_WG_PREFERRED_IP:-}" ]; then
-        cat > "$ROOTFS_DIR/etc/ppsa/wireguard.json" <<WGEOF
+    # Single write with every field (empty string when unset), matching the
+    # in-chroot bake. Earlier this had two branches that omitted lan_endpoint
+    # and public_endpoint entirely, so a cache-hit rebuild (which runs this
+    # outside-chroot path) silently dropped them from the baked config.
+    cat > "$ROOTFS_DIR/etc/ppsa/wireguard.json" <<WGEOF
 {
   "enabled": true,
   "api_url": "${PPSA_WG_API_URL}",
   "api_user": "${PPSA_WG_API_USER}",
   "api_password": "${PPSA_WG_API_PASS}",
   "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}",
-  "preferred_ip": "${PPSA_WG_PREFERRED_IP}"
+  "preferred_ip": "${PPSA_WG_PREFERRED_IP:-}",
+  "lan_endpoint": "${PPSA_WG_LAN_ENDPOINT:-}",
+  "public_endpoint": "${PPSA_WG_PUBLIC_ENDPOINT:-}"
 }
 WGEOF
-        echo "PPSA WireGuard config: re-baked (peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: ${PPSA_WG_PREFERRED_IP})"
-    else
-        cat > "$ROOTFS_DIR/etc/ppsa/wireguard.json" <<WGEOF
-{
-  "enabled": true,
-  "api_url": "${PPSA_WG_API_URL}",
-  "api_user": "${PPSA_WG_API_USER}",
-  "api_password": "${PPSA_WG_API_PASS}",
-  "peer_name": "${PPSA_WG_PEER_NAME:-ppsa-server}"
-}
-WGEOF
-        echo "PPSA WireGuard config: re-baked (peer: ${PPSA_WG_PEER_NAME:-ppsa-server})"
-    fi
     chmod 600 "$ROOTFS_DIR/etc/ppsa/wireguard.json"
+    echo "PPSA WireGuard config: re-baked (peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: '${PPSA_WG_PREFERRED_IP:-}', lan_endpoint: '${PPSA_WG_LAN_ENDPOINT:-}', public_endpoint: '${PPSA_WG_PUBLIC_ENDPOINT:-}')"
 else
     # Don't overwrite the cached (or newly-built) file if we have no creds.
     # The cached version, if any, wins; otherwise install.sh's WebUI flow

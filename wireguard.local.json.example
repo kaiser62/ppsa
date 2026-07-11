@@ -5,5 +5,8 @@
   "api_user": "admin",
   "api_password": "replace-me-with-your-wg-easy-admin-password",
   "peer_name": "ppsa-server",
-  "preferred_ip": "10.8.0.2"
+  "preferred_ip": "10.8.0.2",
+  "_comment_endpoints": "public_endpoint = raw IP:port of the wg-easy gaming WG listener, forced into wg0.conf so cold-boot needs no DNS. lan_endpoint = the hub's LAN IP:port; set it ONLY if this PPSA sits on the SAME LAN as the hub, where reaching the public IP fails via router NAT-hairpin. register.sh tries public first, falls back to lan_endpoint if public stays silent, then persists the working one so it survives reboot. Harmless to set both even for a remote box (lan is just never used).",
+  "lan_endpoint": "192.168.1.140:51830",
+  "public_endpoint": "118.179.74.23:51830"
 }
