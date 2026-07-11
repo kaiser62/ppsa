@@ -65,7 +65,7 @@ STEP_NAMES=(
 # block indefinitely on VDI/fixed virtual disks. The whole step is bounded
 # by an outer 'timeout 30' so it cannot stall the rest of install.sh.
 mark_step 1
-echo "[1/8] Resizing root partition to fill drive..."
+echo "[1/9] Resizing root partition to fill drive..."
 RESIZE_START=$(date +%s)
 # ponytail: just attempt the resize. growpart is a no-op if the partition
 # already fills the disk; resize2fs is a no-op if the fs is at full size.
@@ -102,12 +102,12 @@ echo "  (resize step took ${ELAPSED}s)"
 
 # --- Step 1: Ensure Docker is running ---
 mark_step 2
-echo "[2/8] Starting Docker..."
+echo "[2/9] Starting Docker..."
 systemctl start docker || true
 
 # --- Step 2: Set up environment ---
 mark_step 3
-echo "[3/8] Configuring environment..."
+echo "[3/9] Configuring environment..."
 cd "$PPSA_DIR"
 if [ ! -f .env ]; then
     if [ -f .env.example ]; then
@@ -118,7 +118,7 @@ fi
 
 # --- Step 3: Deploy Docker stack ---
 mark_step 4
-echo "[4/8] Deploying Docker stack..."
+echo "[4/9] Deploying Docker stack..."
 # Pull can fail on no-network or registry issues — don't let it kill install.
 # Ponytail: one retry on transient registry corruption (empty init.sh etc).
 pull_with_retry() {
@@ -197,7 +197,7 @@ fi
 # to /opt/ppsa/, so the wifi-onboard service was never installed.
 # Install it here (on first boot) so the hotspot fallback is active.
 mark_step 5
-echo "[5/8] Installing PPSA Wi-Fi onboarding service..."
+echo "[5/9] Installing PPSA Wi-Fi onboarding service..."
 if [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh" ] && [ -f "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" ]; then
     chmod +x "$PPSA_DIR/scripts/ppsa-wifi-onboard.sh"
     cp "$PPSA_DIR/scripts/ppsa-wifi-onboard.service" /etc/systemd/system/ppsa-wifi-onboard.service
@@ -222,7 +222,7 @@ fi
 # user's router), the script logs a warning and continues — registration
 # can be retried later via the WebUI.
 mark_step 6
-echo "[6/8] Connecting to PPSA WireGuard network..."
+echo "[6/9] Connecting to PPSA WireGuard network..."
 
 # Read config to announce what we're about to do (and skip if disabled).
 wg_api_url=""; wg_peer_name=""; wg_enabled="false"

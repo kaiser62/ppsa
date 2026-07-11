@@ -44,7 +44,11 @@ if [[ ! -f "${CONFIG_FILE}" ]]; then
     exit 0
 fi
 
-eval "$(python3 - "${CONFIG_FILE}" <<'PYEOF'
+# Parse to a variable first: `eval "$(...)"` masks python's exit status
+# (the command substitution's rc is what `eval` sees, and an empty eval is
+# always 0), so a parse failure used to fall through to `set -u` aborting on
+# an unbound NB_ENABLED with a confusing message. Capture, check rc, eval.
+NB_VALS=$(python3 - "${CONFIG_FILE}" <<'PYEOF'
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -53,12 +57,15 @@ except Exception as e:
     sys.stderr.write(f"JSON parse error: {e}\n")
     sys.exit(1)
 def esc(v):
-    return str(v).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+    # Collapse newlines too: these become single-line shell assignments.
+    s = str(v).replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+    return s.replace("\n", " ").replace("\r", " ")
 print(f'NB_ENABLED="{esc(str(c.get("enabled", False)).lower())}"')
 print(f'NB_MGMT_URL="{esc(c.get("management_url", ""))}"')
 print(f'NB_SETUP_KEY="{esc(c.get("setup_key", ""))}"')
 PYEOF
-)" || { log "Failed to parse ${CONFIG_FILE}"; exit 1; }
+) || { log "Failed to parse ${CONFIG_FILE}"; exit 1; }
+eval "${NB_VALS}"
 
 if [[ "${NB_ENABLED}" != "true" ]]; then
     log "NetBird disabled in config (enabled=false)"
