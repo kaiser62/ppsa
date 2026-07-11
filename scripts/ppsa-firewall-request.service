@@ -1,0 +1,19 @@
+# =============================================================================
+# ppsa-firewall-request.service
+# =============================================================================
+# One-shot helper triggered by ppsa-firewall-request.path: re-runs the
+# WG_FRIENDS chain builder on the host after the webui wrote a new
+# firewall.json / touched the request file. Output is captured to
+# /etc/ppsa/firewall-apply.log so the webui can surface the result, and the
+# apply script itself refreshes /etc/ppsa/wg_friends.rules (what the webui
+# Firewall tab displays).
+# =============================================================================
+
+[Unit]
+Description=PPSA firewall apply (webui requested)
+ConditionPathExists=/opt/ppsa/scripts/ppsa-firewall-apply.sh
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '/opt/ppsa/scripts/ppsa-firewall-apply.sh > /etc/ppsa/firewall-apply.log 2>&1; chmod 644 /etc/ppsa/firewall-apply.log'
+Nice=10

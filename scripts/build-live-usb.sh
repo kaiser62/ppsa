@@ -383,6 +383,21 @@ if [ -f /opt/ppsa/scripts/ppsa-wg-manual-apply.path ]; then
     echo "PPSA WG manual apply: path unit enabled"
 fi
 
+# PPSA firewall apply trigger: host-side path unit that rebuilds the
+# WG_FRIENDS chain when the webui writes firewall.json + touches
+# firewall-request.json — the webui container's own netns can't modify the
+# host firewall itself (same pattern as the WG manual apply above).
+if [ -f /opt/ppsa/scripts/ppsa-firewall-request.service ]; then
+    cp /opt/ppsa/scripts/ppsa-firewall-request.service /etc/systemd/system/
+    echo "PPSA firewall request: service installed"
+fi
+if [ -f /opt/ppsa/scripts/ppsa-firewall-request.path ]; then
+    cp /opt/ppsa/scripts/ppsa-firewall-request.path /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ppsa-firewall-request.path
+    echo "PPSA firewall request: path unit enabled"
+fi
+
 # PPSA Docker Compose stack: re-apply on every boot (safety net for Docker
 # container-metadata loss after an unclean shutdown/power loss). Idempotent
 # — a no-op when the stack is already healthy.

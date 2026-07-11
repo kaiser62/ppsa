@@ -1,0 +1,21 @@
+# =============================================================================
+# ppsa-firewall-request.path
+# =============================================================================
+# Watches /etc/ppsa/firewall-request.json for changes written by the webui
+# (/api/firewall/config PUT, /api/firewall/apply, /api/firewall/reset) and
+# triggers ppsa-firewall-request.service to rebuild the WG_FRIENDS chain on
+# the host. Same pattern as ppsa-wg-manual-apply.path: the webui container
+# runs in its own netns and CANNOT touch the host firewall itself (its
+# nsenter -t 1 targets the container's own PID 1, not the host), so all
+# privileged firewall work happens host-side via this trigger.
+# =============================================================================
+
+[Unit]
+Description=PPSA firewall apply (watch webui trigger)
+
+[Path]
+PathModified=/etc/ppsa/firewall-request.json
+Unit=ppsa-firewall-request.service
+
+[Install]
+WantedBy=multi-user.target

@@ -123,4 +123,13 @@ fi
 # lingering restore unit can't reinstate the broken behaviour.
 rm -f /etc/iptables/rules.v4 /etc/ppsa/iptables.rules.v4 2>/dev/null || true
 
+# Export ONLY the WG_FRIENDS chain (host-managed, contains no Docker DNAT) so
+# the WebUI Firewall tab can show the live rules. This is safe to persist —
+# unlike a full iptables-save it can't pin Docker's per-container DNAT to a
+# stale IP. Written on every run (boot restore + WebUI apply), so it stays
+# in sync with the actual chain.
+mkdir -p /etc/ppsa 2>/dev/null || true
+iptables -S "$CHAIN" > /etc/ppsa/wg_friends.rules 2>/dev/null || true
+chmod 644 /etc/ppsa/wg_friends.rules 2>/dev/null || true
+
 echo "WG_FRIENDS rebuilt: TCP=[$TCP] UDP=[$UDP] ICMP=$ICMP"

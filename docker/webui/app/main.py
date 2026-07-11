@@ -8,6 +8,7 @@ Requires JWT authentication on all /api/* endpoints except /api/login and /healt
 
 import os
 import json
+import time
 import shlex
 import re
 import asyncio
@@ -953,21 +954,22 @@ async def wireguard_disconnect(_user: str = Depends(require_auth)):
 # Wi-Fi management (runs on the host, not in this container)
 # ---------------------------------------------------------------------------
 def _host_exec(cmd: str, timeout: int = 30) -> tuple[int, str, str]:
-    """Run a command on the PPSA host (not in a container) and return exit/out/err.
+    """Run a command against the PPSA host filesystem and return exit/out/err.
 
     The webui container has /host mounted read-only (the host's root
     filesystem). We chroot into it to use the host's nmcli, wpa_supplicant,
-    hostapd, and other system binaries. The chroot runs commands in the
-    host's mount namespace, so /proc, /sys, and network namespaces are
-    still the container's — but for nmcli/wifi operations, that's fine
-    because those tools work via netlink which sees the host's Wi-Fi
-    interfaces regardless of mount namespace.
+    hostapd, and other system binaries, which talk to host daemons via their
+    sockets under /host/run.
+
+    LIMITS (do not "fix" by adding nsenter flags): this container is NOT
+    pid:host, so `nsenter -t 1` targets the container's own PID 1 — it can
+    never reach the host's mount/net namespaces. Anything that must run in
+    the host's network namespace (iptables/the firewall apply script) or
+    write outside the /etc/ppsa rw-mount must go through a host-side systemd
+    .path trigger instead (see ppsa-wg-manual-apply.path and
+    ppsa-firewall-request.path).
     """
     import subprocess
-    # chroot into /host to use the host's binaries. The chroot process
-    # inherits the container's network namespace, so we use nsenter-style
-    # trick: run in the host's pid 1 mount namespace via nsenter if
-    # available, else fall back to direct chroot.
     full_cmd = f"nsenter -t 1 -m -- chroot /host bash -c {shlex.quote(cmd)} 2>&1"
     try:
         p = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=timeout)
@@ -1120,20 +1122,68 @@ def _fw_validate_ports(ports: list[int], proto: str) -> list[int]:
     return sorted(out)
 
 def _fw_write_config(cfg: dict) -> tuple[int, str, str]:
-    """Write firewall config to the webui container's writable data dir.
+    """Write firewall config to /etc/ppsa/firewall.json (canonical).
 
-    The webui container has /:/host:ro (read-only), so we can't write directly to the
-    host's /etc/ppsa via _host_exec. Instead, we write to /app/data/firewall.json
-    (writable Docker volume) and the apply script on the host reads from the volume
-    path: /var/lib/docker/volumes/<webui_data>/_data/firewall.json
+    /etc/ppsa is mounted rw into this container (compose overrides the
+    /:/host:ro mount for that one dir), so we write the canonical host path
+    directly — the apply script prefers it over the webui-volume copy. The
+    container-volume copy is kept as a best-effort mirror for debugging.
     """
-    # Write the config file in the webui container's writable data dir
-    container_path = Path(FIREWALL_CONFIG_CONTAINER)
-    container_path.parent.mkdir(parents=True, exist_ok=True)
-    container_path.write_text(json.dumps(cfg, indent=2))
-    container_path.chmod(0o600)
-    # Return success (the apply script reads from the webui data dir)
-    return 0, f"wrote {container_path}", ""
+    try:
+        host_path = Path(FIREWALL_CONFIG_HOST)
+        host_path.parent.mkdir(parents=True, exist_ok=True)
+        host_path.write_text(json.dumps(cfg, indent=2))
+        host_path.chmod(0o644)
+    except OSError as e:
+        return 1, "", f"cannot write {FIREWALL_CONFIG_HOST}: {e}"
+    try:
+        container_path = Path(FIREWALL_CONFIG_CONTAINER)
+        container_path.parent.mkdir(parents=True, exist_ok=True)
+        container_path.write_text(json.dumps(cfg, indent=2))
+        container_path.chmod(0o600)
+    except OSError:
+        pass  # mirror only; canonical write above already succeeded
+    return 0, f"wrote {FIREWALL_CONFIG_HOST}", ""
+
+
+FIREWALL_REQUEST_FILE = "/etc/ppsa/firewall-request.json"
+FIREWALL_RULES_EXPORT = "/etc/ppsa/wg_friends.rules"
+FIREWALL_APPLY_LOG = "/etc/ppsa/firewall-apply.log"
+
+def _fw_trigger_apply(timeout: float = 10.0) -> tuple[bool, str]:
+    """Ask the HOST to re-run the firewall apply script and wait for it.
+
+    The webui container cannot modify the host firewall itself (own netns,
+    no pid:host — see _host_exec docstring). Instead we touch
+    /etc/ppsa/firewall-request.json; ppsa-firewall-request.path on the host
+    fires ppsa-firewall-request.service, which runs
+    ppsa-firewall-apply.sh and refreshes /etc/ppsa/wg_friends.rules. We
+    detect completion by watching that export file's mtime move.
+    """
+    rules = Path(FIREWALL_RULES_EXPORT)
+    before = rules.stat().st_mtime if rules.exists() else 0.0
+    try:
+        Path(FIREWALL_REQUEST_FILE).write_text(
+            json.dumps({"requested_at": datetime.utcnow().isoformat() + "Z"})
+        )
+    except OSError as e:
+        return False, f"cannot write {FIREWALL_REQUEST_FILE}: {e}"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(0.5)
+        try:
+            if rules.exists() and rules.stat().st_mtime > before:
+                try:
+                    detail = Path(FIREWALL_APPLY_LOG).read_text().strip()
+                except OSError:
+                    detail = ""
+                return True, detail or "applied"
+        except OSError:
+            continue
+    return False, (
+        "host did not apply within "
+        f"{timeout:.0f}s (is ppsa-firewall-request.path enabled on the host?)"
+    )
 
 @app.get("/api/firewall/config")
 async def get_firewall_config(_user: str = Depends(require_auth)):
@@ -1170,44 +1220,35 @@ async def update_firewall_config(cfg: FirewallConfig, _user: str = Depends(requi
     rc, out, err = _fw_write_config(new_cfg)
     if rc != 0:
         raise HTTPException(status_code=500, detail=f"write config failed: {err or out}")
-    rc2, out2, err2 = _host_exec(f"bash {shlex.quote(FIREWALL_APPLY_SCRIPT)}")
-    if rc2 != 0:
-        raise HTTPException(status_code=500, detail=f"apply failed: {err2 or out2}")
-    return {"status": "ok", "config": new_cfg, "detail": out2}
+    ok, detail = _fw_trigger_apply()
+    if not ok:
+        raise HTTPException(status_code=500, detail=f"apply failed: {detail}")
+    return {"status": "ok", "config": new_cfg, "detail": detail}
 
 @app.get("/api/firewall/status")
 async def get_firewall_status(_user: str = Depends(require_auth)):
     """Show current WG_FRIENDS iptables chain rules + presence flag.
 
-    The webui container can't run iptables -S WG_FRIENDS directly: it lacks
-    CAP_SYS_ADMIN (so nsenter into PID 1's netns fails) and chrooting into
-    /host runs the host's iptables binary but in the container's netns, where
-    the chain doesn't exist. The apply script writes a full iptables-save to
-    /etc/ppsa/iptables.rules.v4 on every run, so we parse that file. Stale
-    only if the chain is edited by something other than the apply script.
+    The webui container can't reliably run iptables in the host's netns, so
+    it reads the chain-only export the apply script writes to
+    /etc/ppsa/wg_friends.rules on every run (boot restore + WebUI apply).
+    That file is just `iptables -S WG_FRIENDS` output (safe to persist — no
+    Docker DNAT), so a line-prefix filter is all that's needed. The old
+    full-table snapshot (iptables.rules.v4) was removed because it pinned
+    Docker's DNAT to stale IPs; we no longer read it.
     """
     rules_text = ""
     for path in (
-        Path("/etc/ppsa/iptables.rules.v4"),
-        Path("/etc/iptables/rules.v4"),
-        Path("/host/etc/ppsa/iptables.rules.v4"),
-        Path("/host/etc/iptables/rules.v4"),
+        Path("/etc/ppsa/wg_friends.rules"),
+        Path("/host/etc/ppsa/wg_friends.rules"),
     ):
         if not path.exists():
             continue
         try:
-            in_chain = False
-            lines = []
-            for line in path.read_text().splitlines():
-                if line.startswith(":WG_FRIENDS "):
-                    in_chain = True
-                    continue
-                if line.startswith("COMMIT"):
-                    if in_chain:
-                        break
-                    continue
-                if in_chain and line.startswith("-A WG_FRIENDS"):
-                    lines.append(line)
+            lines = [
+                ln for ln in path.read_text().splitlines()
+                if ln.startswith("-A WG_FRIENDS")
+            ]
             if lines:
                 rules_text = "\n".join(lines)
                 break
@@ -1220,11 +1261,11 @@ async def get_firewall_status(_user: str = Depends(require_auth)):
 
 @app.post("/api/firewall/apply")
 async def firewall_apply(_user: str = Depends(require_auth)):
-    """Re-run the apply script (use after manually editing firewall.json on the host)."""
-    rc, out, err = _host_exec(f"bash {shlex.quote(FIREWALL_APPLY_SCRIPT)}")
-    if rc != 0:
-        raise HTTPException(status_code=500, detail=f"apply failed: {err or out}")
-    return {"status": "ok", "detail": out}
+    """Re-run the apply script on the host (use after editing firewall.json)."""
+    ok, detail = _fw_trigger_apply()
+    if not ok:
+        raise HTTPException(status_code=500, detail=f"apply failed: {detail}")
+    return {"status": "ok", "detail": detail}
 
 @app.post("/api/firewall/reset")
 async def firewall_reset(_user: str = Depends(require_auth)):
@@ -1232,10 +1273,10 @@ async def firewall_reset(_user: str = Depends(require_auth)):
     rc, out, err = _fw_write_config(DEFAULT_FIREWALL_CONFIG)
     if rc != 0:
         raise HTTPException(status_code=500, detail=f"write config failed: {err or out}")
-    rc2, out2, err2 = _host_exec(f"bash {shlex.quote(FIREWALL_APPLY_SCRIPT)}")
-    if rc2 != 0:
-        raise HTTPException(status_code=500, detail=f"apply failed: {err2 or out2}")
-    return {"status": "ok", "config": DEFAULT_FIREWALL_CONFIG, "detail": out2}
+    ok, detail = _fw_trigger_apply()
+    if not ok:
+        raise HTTPException(status_code=500, detail=f"apply failed: {detail}")
+    return {"status": "ok", "config": DEFAULT_FIREWALL_CONFIG, "detail": detail}
 
 
 # ---------------------------------------------------------------------------
