@@ -35,6 +35,11 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Local handoff/scratch docs — may contain secrets (setup keys, PATs,
+# admin passwords). Never commit.
+deepseek*.md
+netbird-deployment.cont.md
+
 # Docker
 .docker/
 
