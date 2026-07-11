@@ -32,7 +32,7 @@ PROGRESS_FILE="/run/ppsa-install.progress"  # written by install.sh
 SERVICE_NAME="ppsa-install.service"
 
 # Total steps in install.sh (must match).
-TOTAL_STEPS=8
+TOTAL_STEPS=9
 STEP_NAMES=(
     "Resizing root partition"
     "Starting Docker"
@@ -40,6 +40,7 @@ STEP_NAMES=(
     "Deploying Docker stack"
     "Installing Wi-Fi onboarding"
     "Connecting to WireGuard network"
+    "NetBird enrollment"
     "Configuring firewall"
     "Marking installation complete"
 )
@@ -64,8 +65,8 @@ get_current_step() {
         return
     fi
     if [[ -f "$LOG_FILE" ]]; then
-        # Look for the highest [N/8] marker (or [N/7] for older installs)
-        grep -oP '\[\d/[78]\]' "$LOG_FILE" 2>/dev/null \
+        # Look for the highest [N/9] marker (or [N/7] or [N/8] for older installs)
+        grep -oP '\[\d/[789]\]' "$LOG_FILE" 2>/dev/null \
             | grep -oP '\d' \
             | sort -n \
             | tail -1 || echo 0

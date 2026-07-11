@@ -1,0 +1,24 @@
+# =============================================================================
+# ppsa-netbird-up.service
+# =============================================================================
+# Enrolls/reconnects this PPSA host as a NetBird peer on every boot using
+# the baked setup key in /etc/ppsa/netbird.json. Idempotent — exits 0
+# immediately when the engine is already connected. The netbird daemon
+# itself (netbird.service) maintains the tunnel; this unit only handles
+# first-time enrollment and post-outage re-enrollment.
+# =============================================================================
+
+[Unit]
+Description=PPSA NetBird enrollment (unattended, setup-key based)
+Wants=network-online.target netbird.service
+After=network-online.target netbird.service
+ConditionPathExists=/opt/ppsa/scripts/ppsa-netbird-up.sh
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ppsa/scripts/ppsa-netbird-up.sh
+RemainAfterExit=yes
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -21,6 +21,9 @@ set -u
 
 CHAIN="WG_FRIENDS"
 WG_NET="10.8.0.0/24"
+# NetBird peers (netbird branch) get the same friend-level access; NetBird
+# assigns from the CGNAT range. One chain, two source-subnet jumps.
+NB_NET="100.64.0.0/10"
 # webui_data volume is created by docker compose. The exact name is
 # compose_webui_data (compose project prefix + service name + _data).
 WEBDATA="/var/lib/docker/volumes/compose_webui_data/_data"
@@ -105,6 +108,10 @@ iptables -A "$CHAIN" -j DROP
 # position, our targeted rule should win on specificity for 10.8.0.0/24).
 if ! iptables -C INPUT -s "$WG_NET" -j "$CHAIN" 2>/dev/null; then
   iptables -I INPUT 1 -s "$WG_NET" -j "$CHAIN"
+fi
+# Same gate for NetBird peers (100.64.0.0/10, netbird branch).
+if ! iptables -C INPUT -s "$NB_NET" -j "$CHAIN" 2>/dev/null; then
+  iptables -I INPUT 1 -s "$NB_NET" -j "$CHAIN"
 fi
 
 # --- Persistence ---

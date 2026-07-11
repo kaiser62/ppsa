@@ -19,7 +19,7 @@ name: Build USB Image
 
 on:
   push:
-    branches: [master]
+    branches: [master, netbird]
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -83,6 +83,10 @@ jobs:
           # Hardcoded WireGuard failsafe config (base64 full wg0.conf, used
           # when auto-registration above fails or is unconfigured).
           PPSA_WG_FALLBACK_CONF_B64: ${{ secrets.PPSA_WG_FALLBACK_CONF_B64 }}
+          # NetBird unattended enrollment (netbird branch; empty secrets =
+          # netbird.json baked disabled, agent stays idle).
+          PPSA_NB_MANAGEMENT_URL: ${{ secrets.PPSA_NB_MANAGEMENT_URL }}
+          PPSA_NB_SETUP_KEY: ${{ secrets.PPSA_NB_SETUP_KEY }}
           # SSH LAN/WAN exposure opt-in (default false = WireGuard-only).
           PPSA_EXPOSE_SSH_LAN: ${{ inputs.expose_ssh_lan || 'false' }}
         run: |
@@ -185,6 +189,10 @@ jobs:
           # Hardcoded WireGuard failsafe config (base64 full wg0.conf, used
           # when auto-registration above fails or is unconfigured).
           PPSA_WG_FALLBACK_CONF_B64: ${{ secrets.PPSA_WG_FALLBACK_CONF_B64 }}
+          # NetBird unattended enrollment (netbird branch; empty secrets =
+          # netbird.json baked disabled, agent stays idle).
+          PPSA_NB_MANAGEMENT_URL: ${{ secrets.PPSA_NB_MANAGEMENT_URL }}
+          PPSA_NB_SETUP_KEY: ${{ secrets.PPSA_NB_SETUP_KEY }}
           # SSH LAN/WAN exposure opt-in (default false = WireGuard-only).
           PPSA_EXPOSE_SSH_LAN: ${{ inputs.expose_ssh_lan || 'false' }}
         run: |

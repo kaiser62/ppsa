@@ -1091,6 +1091,32 @@ async def wifi_hotspot_stop(_user: str = Depends(require_auth)):
 
 
 # ---------------------------------------------------------------------------
+# NetBird status (netbird branch) — display-only. The netbird daemon runs on
+# the HOST; its CLI talks to the daemon over a unix socket under /host, so
+# the chroot-based _host_exec pattern works (same as nmcli).
+# ---------------------------------------------------------------------------
+@app.get("/api/netbird/status")
+async def netbird_status(_user: str = Depends(require_auth)):
+    """Live NetBird peer status from the host daemon (netbird status --json)."""
+    rc, out, err = _host_exec("netbird status --json", timeout=15)
+    if rc != 0 or not out:
+        return {"installed": False, "connected": False, "detail": err or out or "netbird unavailable"}
+    try:
+        st = json.loads(out)
+    except json.JSONDecodeError:
+        return {"installed": True, "connected": False, "detail": out[:300]}
+    return {
+        "installed": True,
+        "connected": bool(st.get("management", {}).get("connected")),
+        "netbird_ip": st.get("netbirdIp", ""),
+        "fqdn": st.get("fqdn", ""),
+        "peers_connected": st.get("peers", {}).get("connected", 0),
+        "peers_total": st.get("peers", {}).get("total", 0),
+        "relayed": [p.get("fqdn") for p in st.get("peers", {}).get("details", []) if p.get("connectionType") == "Relayed"][:20],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Firewall management (WG_FRIENDS chain on the host, runs via _host_exec)
 # ---------------------------------------------------------------------------
 FIREWALL_CONFIG_CONTAINER = "/app/data/firewall.json"  # writable in the webui container

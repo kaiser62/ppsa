@@ -190,6 +190,7 @@
         <button onclick="showPage('wifi',event)">Wi-Fi</button>
         <button onclick="showPage('firewall',event)">Firewall</button>
         <button onclick="showPage('wireguard',event)">WireGuard</button>
+        <button onclick="showPage('netbird',event)">NetBird</button>
         <button onclick="showPage('settings',event)">Settings</button>
       </div>
       <button class="logout-btn" onclick="logout()">Logout</button>
@@ -503,6 +504,31 @@
       </div>
     </div>
 
+    <!-- NetBird -->
+    <div id="page-netbird" class="page">
+      <div id="nb-alert" class="alert"></div>
+
+      <!-- Status -->
+      <div class="section">
+        <h2>NetBird Status</h2>
+        <div class="grid">
+          <div class="card"><h3>Agent</h3><div class="value" id="nb-status-text">Checking...</div><div class="sub" id="nb-fqdn"></div></div>
+          <div class="card"><h3>NetBird IP</h3><div class="value" id="nb-ip" style="font-size:0.9rem">-</div><div class="sub">wt0 address</div></div>
+          <div class="card"><h3>Peers</h3><div class="value" id="nb-peers">-</div><div class="sub" id="nb-peers-detail"></div></div>
+          <div class="card"><h3>Relayed</h3><div class="value" id="nb-relayed">0</div><div class="sub">via TCP 443 relay</div></div>
+        </div>
+        <div class="btn-group" style="margin-top:0.5rem">
+          <button class="outline small" onclick="netbirdStatus()">Refresh</button>
+        </div>
+      </div>
+
+      <!-- Detail -->
+      <div class="section" id="nb-detail-section" style="display:none">
+        <h2>Detail</h2>
+        <textarea id="nb-dump" class="config-editor" style="min-height:100px" readonly></textarea>
+      </div>
+    </div>
+
     <!-- Settings -->
     <div id="page-settings" class="page">
       <div id="settings-alert" class="alert"></div>
@@ -610,6 +636,7 @@ function showPage(name, ev) {
   if (name === 'backup') refreshBackup();
   if (name === 'mods') refreshMods();
   if (name === 'wireguard') wgStatus();
+  if (name === 'netbird') netbirdStatus();
   if (name === 'wifi') wifiScan();
   if (name === 'firewall') refreshFirewall();
 }
@@ -1187,6 +1214,53 @@ async function wgDisconnect() {
     wgStatus();
   } catch(e) {
     showAlert('Error: ' + e.message, 'error', 'wg-alert');
+  }
+}
+
+// --- NetBird ---
+async function netbirdStatus() {
+  try {
+    const status = await api('/api/netbird/status');
+
+    const el = document.getElementById('nb-status-text');
+    const fqdnEl = document.getElementById('nb-fqdn');
+    if (!status.installed) {
+      el.textContent = 'Not Installed';
+      el.className = 'value status-error';
+      fqdnEl.textContent = '';
+    } else if (status.connected) {
+      el.textContent = 'Connected';
+      el.className = 'value status-ok';
+      fqdnEl.textContent = status.fqdn || '';
+    } else {
+      el.textContent = 'Disconnected';
+      el.className = 'value status-warn';
+      fqdnEl.textContent = status.detail || '';
+    }
+
+    document.getElementById('nb-ip').textContent = status.netbird_ip || '-';
+    const peersConnected = status.peers_connected || 0;
+    const peersTotal = status.peers_total || 0;
+    document.getElementById('nb-peers').textContent = peersConnected + '/' + peersTotal;
+    document.getElementById('nb-peers-detail').textContent = peersTotal + ' total, ' + peersConnected + ' connected';
+
+    const relayed = status.relayed || [];
+    const relayedEl = document.getElementById('nb-relayed');
+    if (relayed.length > 0) {
+      relayedEl.textContent = relayed.join(', ');
+      relayedEl.className = 'value status-warn';
+    } else {
+      relayedEl.textContent = '0';
+      relayedEl.className = 'value status-ok';
+    }
+
+    // Detail dump
+    document.getElementById('nb-dump').value = JSON.stringify(status, null, 2);
+    document.getElementById('nb-detail-section').style.display = '';
+  } catch(e) {
+    console.error('NetBird:', e);
+    document.getElementById('nb-status-text').textContent = 'Error';
+    document.getElementById('nb-status-text').className = 'value status-error';
   }
 }
 

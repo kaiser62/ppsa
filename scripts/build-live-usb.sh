@@ -515,6 +515,103 @@ if [ -n "${PPSA_WG_FALLBACK_CONF_B64:-}" ]; then
     echo "PPSA WireGuard fallback config: baked in"
 fi
 
+# --- NetBird agent (netbird branch: parallel to the WG stack) ---
+# Pinned release binary — no third-party apt repo inside the chroot. The
+# daemon unit is written by hand (same shape `netbird service install`
+# generates) so the install is fully reproducible. Enrollment happens on
+# first boot via ppsa-netbird-up.sh with the baked setup key; every
+# appliance gets its OWN peer identity (reusable key), unlike the shared
+# WG identity.
+NETBIRD_VERSION="0.74.4"
+echo "Installing NetBird agent v${NETBIRD_VERSION}..."
+NB_TGZ="/tmp/netbird_${NETBIRD_VERSION}_linux_amd64.tar.gz"
+if curl -fsSL -o "$NB_TGZ" \
+    "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_amd64.tar.gz"; then
+    tar -xzf "$NB_TGZ" -C /usr/local/bin netbird
+    chmod 755 /usr/local/bin/netbird
+    rm -f "$NB_TGZ"
+    cat > /etc/systemd/system/netbird.service <<'NBSVCEOF'
+[Unit]
+Description=NetBird agent daemon
+After=network.target syslog.target
+
+[Service]
+ExecStart=/usr/local/bin/netbird service run --config /etc/netbird/config.json --log-level info --log-file /var/log/netbird/client.log
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+NBSVCEOF
+    mkdir -p /etc/netbird /var/log/netbird
+    systemctl enable netbird.service
+    echo "NetBird agent: installed and enabled ($(/usr/local/bin/netbird version 2>/dev/null || echo v${NETBIRD_VERSION}))"
+else
+    echo "WARNING: NetBird agent download failed — image will build without NetBird"
+    rm -f "$NB_TGZ"
+fi
+
+# PPSA NetBird enrollment service (runs ppsa-netbird-up.sh on every boot;
+# idempotent, exits fast when already connected).
+if [ -f /opt/ppsa/scripts/ppsa-netbird-up.sh ]; then
+    chmod +x /opt/ppsa/scripts/ppsa-netbird-up.sh
+fi
+if [ -f /opt/ppsa/scripts/ppsa-netbird-up.service ]; then
+    cp /opt/ppsa/scripts/ppsa-netbird-up.service /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ppsa-netbird-up.service
+    echo "PPSA NetBird enrollment: service enabled"
+fi
+
+# Read NetBird enrollment config from netbird.local.json if present and env
+# unset (local builds; CI presets PPSA_NB_* from secrets — mirrors the
+# wireguard.local.json handling above).
+NB_LOCAL_JSON=""
+for candidate in \
+  "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/../netbird.local.json" \
+  "./netbird.local.json" \
+  "/etc/ppsa/netbird.local.json"; do
+  if [ -f "$candidate" ]; then
+    NB_LOCAL_JSON="$candidate"
+    break
+  fi
+done
+if [ -n "$NB_LOCAL_JSON" ] && [ -z "${PPSA_NB_MANAGEMENT_URL:-}" ]; then
+  echo "PPSA NetBird: reading config from $NB_LOCAL_JSON"
+  NB_PARSER=$(mktemp --suffix=.sh)
+  NB_LOCAL_JSON="$NB_LOCAL_JSON" python3 - > "$NB_PARSER" 2>/dev/null <<'NBPYEOF'
+import json, os
+with open(os.environ["NB_LOCAL_JSON"]) as f:
+    cfg = json.load(f)
+cfg.pop("_comment", None)
+if cfg.get("enabled"):
+    def emit(k, v):
+        sv = str(v).replace("\\", "\\\\").replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
+        print(f'export {k}="{sv}"')
+    emit("PPSA_NB_MANAGEMENT_URL", cfg.get("management_url", ""))
+    emit("PPSA_NB_SETUP_KEY",      cfg.get("setup_key", ""))
+NBPYEOF
+  if [ -s "$NB_PARSER" ] && grep -q '^export ' "$NB_PARSER"; then
+    # shellcheck disable=SC1090
+    . "$NB_PARSER"
+  fi
+  rm -f "$NB_PARSER"
+fi
+
+# Bake /etc/ppsa/netbird.json — SINGLE all-fields write (the two-branch
+# pattern silently dropped fields on the cache-hit path once; never again).
+if [ -n "${PPSA_NB_MANAGEMENT_URL:-}" ] && [ -n "${PPSA_NB_SETUP_KEY:-}" ]; then NB_ENABLED_JSON="true"; else NB_ENABLED_JSON="false"; fi
+cat > /etc/ppsa/netbird.json <<NBEOF
+{
+  "enabled": ${NB_ENABLED_JSON},
+  "management_url": "${PPSA_NB_MANAGEMENT_URL:-}",
+  "setup_key": "${PPSA_NB_SETUP_KEY:-}"
+}
+NBEOF
+chmod 600 /etc/ppsa/netbird.json
+echo "PPSA NetBird config: enabled=${NB_ENABLED_JSON} (management: '${PPSA_NB_MANAGEMENT_URL:-}')"
+
 # Network policy: whether SSH (22, 10022) is opened on LAN/WAN at first boot.
 # Default (unset/false): SSH is reachable only via the WG_FRIENDS chain
 # (10.8.0.0/24, port 22 is in firewall.json's default allow-list) — nothing
@@ -761,6 +858,44 @@ if [ -n "${PPSA_WG_FALLBACK_CONF_B64:-}" ]; then
     echo "${PPSA_WG_FALLBACK_CONF_B64}" | base64 -d > "$ROOTFS_DIR/etc/ppsa/wireguard-fallback.conf"
     chmod 600 "$ROOTFS_DIR/etc/ppsa/wireguard-fallback.conf"
     echo "PPSA WireGuard fallback config: re-baked"
+fi
+
+# Re-write /etc/ppsa/netbird.json OUTSIDE the chroot too (cache-hit path
+# skips the in-chroot bake). SINGLE all-fields write, no branches that
+# drop fields — the wireguard.json cache-drop bug must not repeat here.
+# Local netbird.local.json parse for direct/WSL builds (CI presets env).
+if [ -z "${PPSA_NB_MANAGEMENT_URL:-}" ] && [ -f "$PPSA_SRC/netbird.local.json" ]; then
+    echo "PPSA NetBird: reading config from $PPSA_SRC/netbird.local.json (outside-chroot)"
+    NB_VALS=$(NB_LOCAL_JSON="$PPSA_SRC/netbird.local.json" python3 - 2>/dev/null <<'NBPYEOF'
+import json, os
+with open(os.environ["NB_LOCAL_JSON"]) as f:
+    cfg = json.load(f)
+cfg.pop("_comment", None)
+if cfg.get("enabled"):
+    def emit(k, v):
+        sv = str(v).replace("\\", "\\\\").replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
+        print(f'export {k}="{sv}"')
+    emit("PPSA_NB_MANAGEMENT_URL", cfg.get("management_url", ""))
+    emit("PPSA_NB_SETUP_KEY",      cfg.get("setup_key", ""))
+NBPYEOF
+) || true
+    if [ -n "$NB_VALS" ]; then eval "$NB_VALS"; fi
+fi
+mkdir -p "$ROOTFS_DIR/etc/ppsa"
+if [ -n "${PPSA_NB_MANAGEMENT_URL:-}" ] && [ -n "${PPSA_NB_SETUP_KEY:-}" ]; then NB_ENABLED_JSON="true"; else NB_ENABLED_JSON="false"; fi
+# Don't clobber a cached enabled config with a disabled one when env is
+# simply absent AND a baked file already exists (mirror wireguard.json's
+# no-creds behaviour).
+if [ "$NB_ENABLED_JSON" = "true" ] || [ ! -f "$ROOTFS_DIR/etc/ppsa/netbird.json" ]; then
+    cat > "$ROOTFS_DIR/etc/ppsa/netbird.json" <<NBEOF
+{
+  "enabled": ${NB_ENABLED_JSON},
+  "management_url": "${PPSA_NB_MANAGEMENT_URL:-}",
+  "setup_key": "${PPSA_NB_SETUP_KEY:-}"
+}
+NBEOF
+    chmod 600 "$ROOTFS_DIR/etc/ppsa/netbird.json"
+    echo "PPSA NetBird config: re-baked (enabled=${NB_ENABLED_JSON}, management: '${PPSA_NB_MANAGEMENT_URL:-}')"
 fi
 
 # Re-write network-policy.json OUTSIDE the chroot too (same cache-hit

@@ -41,13 +41,13 @@ echo "Date: $(date)"
 echo "Repo: $PPSA_DIR"
 
 # Helper: announce the start of a step (writes to log AND progress file).
-# Total steps must match the [N/7] markers and ppsa-firstboot.sh.
+# Total steps must match the [N/9] markers and ppsa-firstboot.sh.
 mark_step() {
     local n="$1"
     echo "$n" > "$PROGRESS_FILE" 2>/dev/null || true
     echo "[STEP] Entering step $n/$TOTAL_STEPS: ${STEP_NAMES[$((n-1))]:-}"
 }
-TOTAL_STEPS=7
+TOTAL_STEPS=9
 STEP_NAMES=(
     "Resizing root partition"
     "Starting Docker"
@@ -55,6 +55,7 @@ STEP_NAMES=(
     "Deploying Docker stack"
     "Installing Wi-Fi onboarding"
     "Connecting to WireGuard network"
+    "NetBird enrollment"
     "Configuring firewall"
     "Marking installation complete"
 )
@@ -285,6 +286,32 @@ else
     echo "  ppsa-wireguard-register.service not found at $PPSA_DIR/scripts/, skipping"
 fi
 
+# --- NetBird enrollment (netbird branch: runs alongside WG, no conflict —
+# NetBird uses wt0 in 100.64.0.0/10, WG keeps wg0 in 10.8.0.0/24). Every
+# appliance enrolls with its OWN identity via the baked reusable setup key.
+# Non-fatal: the boot service retries on every boot.
+if [ -f "$PPSA_DIR/scripts/ppsa-netbird-up.sh" ]; then
+    chmod +x "$PPSA_DIR/scripts/ppsa-netbird-up.sh"
+    echo "  Enrolling in NetBird network (if configured)..."
+    if timeout 300 "$PPSA_DIR/scripts/ppsa-netbird-up.sh"; then
+        if [ -r /run/ppsa-netbird-ip ]; then
+            nb_ip=$(cat /run/ppsa-netbird-ip 2>/dev/null || true)
+            [ -n "$nb_ip" ] && echo "  NetBird connected: IP $nb_ip"
+        fi
+    else
+        echo "  NetBird enrollment not completed (rc=$?). Will retry on next boot via ppsa-netbird-up.service."
+    fi
+fi
+if [ -f "$PPSA_DIR/scripts/ppsa-netbird-up.service" ]; then
+    cp "$PPSA_DIR/scripts/ppsa-netbird-up.service" /etc/systemd/system/ppsa-netbird-up.service
+    systemctl daemon-reload
+    systemctl enable ppsa-netbird-up.service
+    echo "  ppsa-netbird-up.service: installed and enabled"
+fi
+
+mark_step 7
+echo "[7/9] Enrolling in NetBird network..."
+
 # PPSA WireGuard status snapshot (host-side timer that writes /etc/ppsa/wg-status.json
 # every 5s for the webui container to read — avoids the wg-show-in-container netns issue)
 if [ -f "$PPSA_DIR/scripts/ppsa-wg-status-snapshot.sh" ] && \
@@ -330,9 +357,9 @@ else
     echo "  ppsa-docker-compose.service not found, skipping"
 fi
 
-# --- Step 6: Firewall ---
-mark_step 7
-echo "[7/8] Configuring firewall..."
+# --- Step 8: Firewall ---
+mark_step 8
+echo "[8/9] Configuring firewall..."
 ufw --force enable 2>/dev/null || true
 ufw default deny incoming
 ufw default allow outgoing
@@ -388,9 +415,9 @@ else
   echo "  ppsa-firewall-apply.sh not found, skipping WG_FRIENDS setup"
 fi
 
-# --- Step 7: Mark complete ---
-mark_step 8
-echo "[8/8] Marking installation complete..."
+# --- Step 9: Mark complete ---
+mark_step 9
+echo "[9/9] Marking installation complete..."
 date > "$FLAG_FILE"
 
 # Get IP for summary (fallback to hostname if no non-loopback address)
