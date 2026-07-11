@@ -10,6 +10,20 @@ Compose. Ships three artifact types from the same `build-live-usb.sh` core:
 a raw USB/SSD image, a VirtualBox VDI, and a live-boot installer ISO (writes
 PPSA onto a spare drive/partition without touching the host OS).
 
+## Branch strategy (two parallel fronts)
+
+- **`master`** — WireGuard mainline, ships `v1.2.x` tags. All shared-code work
+  (WebUI, firewall, build script, installer) lands HERE first.
+- **`netbird`** — NetBird networking test line, ships `v1.3.0-nb.N` prerelease
+  tags (a hyphen in the tag auto-marks the GitHub release as prerelease).
+  Sync direction is one-way: `git merge master` into `netbird` — never the
+  reverse until the NetBird line is promoted to mainline.
+- Tag `v1.3.0-nb.N` only from the `netbird` branch. Installer ISO for the
+  branch: `gh workflow run build-installer.yml --ref netbird -f version=v1.3.0-nb.N`.
+- NetBird CI secrets are additive (`PPSA_NB_SETUP_KEY`,
+  `PPSA_NB_MANAGEMENT_URL`); the WG secrets stay untouched so master builds
+  keep working.
+
 ## Commands
 
 ### Build policy: GitHub Actions only, never local
