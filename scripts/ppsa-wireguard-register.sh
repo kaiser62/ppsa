@@ -331,19 +331,32 @@ login_and_get_cookies
 # ============================================================================
 log "Checking if peer '${PEER_NAME}' already exists..."
 
-EXISTING_ID=$(curl -fsS -m 10 -b "${COOKIE_FILE}" "${API_URL}/api/client" 2>/dev/null \
-    | python3 -c "
-import sys, json
+# The client-list fetch MUST be treated as fatal on failure, not as "peer
+# doesn't exist". A transient curl failure here used to silently yield an
+# empty EXISTING_ID, which sent the script down the create path and made a
+# DUPLICATE peer on the hub (same name, new key, next free IP) — hijacking
+# the box's identity/IP. Fetch to a variable and fail hard (-> baked
+# fallback conf) if the list can't be read; only an actual absence of the
+# name in a successfully fetched list may trigger creation.
+CLIENT_LIST=$(curl -fsS -m 10 -b "${COOKIE_FILE}" "${API_URL}/api/client" 2>/dev/null) || \
+    fail "Could not list existing peers (refusing to create a possible duplicate)" 4
+
+# If duplicates already exist (from the old bug), prefer the peer whose
+# address matches preferred_ip, else the lowest id (the original).
+EXISTING_ID=$(printf '%s' "${CLIENT_LIST}" | PPSA_NAME="${PEER_NAME}" PPSA_WANT_IP="${PREFERRED_IP:-}" python3 -c "
+import sys, json, os
 try:
     clients = json.load(sys.stdin)
-    for c in clients:
-        if c.get('name') == '${PEER_NAME}':
-            print(c['id'])
-            break
-except Exception as e:
-    print('', file=sys.stderr)
-    sys.exit(0)
-" 2>/dev/null || true)
+except Exception:
+    sys.exit(1)
+name = os.environ['PPSA_NAME']
+want_ip = os.environ.get('PPSA_WANT_IP', '').strip()
+matches = [c for c in clients if c.get('name') == name]
+if matches:
+    preferred = [c for c in matches if want_ip and c.get('ipv4Address') == want_ip]
+    pick = preferred[0] if preferred else sorted(matches, key=lambda c: c['id'])[0]
+    print(pick['id'])
+" ) || fail "Could not parse peer list from API" 4
 
 if [[ -n "${EXISTING_ID}" ]]; then
     log "Peer '${PEER_NAME}' already exists (id=${EXISTING_ID})"
@@ -406,16 +419,16 @@ print(json.dumps(body))
     rm -f "${CREATE_RESP}"
     log "Peer created"
 
-    # Find the new peer ID
+    # Find the new peer ID (highest id wins: with legacy duplicate names on
+    # the hub, the peer we just created is the newest one)
     PEER_ID=$(curl -fsS -m 10 -b "${COOKIE_FILE}" "${API_URL}/api/client" 2>/dev/null \
-        | python3 -c "
-import sys, json
+        | PPSA_NAME="${PEER_NAME}" python3 -c "
+import sys, json, os
 try:
     clients = json.load(sys.stdin)
-    for c in clients:
-        if c.get('name') == '${PEER_NAME}':
-            print(c['id'])
-            break
+    ids = [c['id'] for c in clients if c.get('name') == os.environ['PPSA_NAME']]
+    if ids:
+        print(max(ids))
 except Exception:
     pass
 " 2>/dev/null || true)
