@@ -1,6 +1,6 @@
 {
   "_comment": "Copy to netbird.local.json (gitignored) for local builds. Baked into PPSA images at build time; first boot enrolls this appliance as a NetBird peer with its OWN identity (reusable setup key). CI uses the PPSA_NB_MANAGEMENT_URL / PPSA_NB_SETUP_KEY secrets instead.",
   "enabled": true,
-  "management_url": "https://nb.example.com",
+  "management_url": "https://nb.pleaseee.eu.org",
   "setup_key": "REUSABLE-SETUP-KEY-FROM-DASHBOARD"
 }
