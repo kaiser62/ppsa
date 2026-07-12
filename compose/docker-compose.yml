@@ -49,6 +49,7 @@ services:
       RESTAPI_PORT: ${RESTAPI_PORT:-8212}
       COMMUNITY: ${COMMUNITY:-false}
       TZ: ${TZ:-UTC}
+      UPDATE_ON_BOOT: false
     healthcheck:
       test: ["CMD", "rcon-cli", "Info"]
       interval: 30s
