@@ -39,8 +39,8 @@ STEP_NAMES=(
     "Configuring environment"
     "Deploying Docker stack"
     "Installing Wi-Fi onboarding"
-    "Connecting to WireGuard network"
-    "NetBird enrollment"
+    "Enrolling in NetBird network"
+    "WireGuard (legacy)"
     "Configuring firewall"
     "Marking installation complete"
 )
@@ -155,34 +155,44 @@ ${GREEN}${BOLD}╔════════════════════�
 
 EOF
         if [[ -n "$ip" ]]; then
-            # Read WireGuard IP if registered
+            # NetBird is the primary overlay; read its assigned IP if enrolled.
+            nb_ip=""
+            [[ -r /run/ppsa-netbird-ip ]] && nb_ip=$(cat /run/ppsa-netbird-ip 2>/dev/null || true)
+            # WireGuard is deprecated/off by default — only surfaced if enabled.
             wg_ip=""
             [[ -r /run/ppsa-wireguard-ip ]] && wg_ip=$(cat /run/ppsa-wireguard-ip 2>/dev/null || true)
+            wg_enabled=false
+            [[ -f /etc/ppsa/wireguard.json ]] && \
+                grep -q '"enabled"[[:space:]]*:[[:space:]]*true' /etc/ppsa/wireguard.json 2>/dev/null && \
+                wg_enabled=true
 
             cat <<EOF
   ${BOLD}Web UI:${RESET}       ${CYAN}http://${ip}:8080${RESET}            ${DIM}Login: admin / admin${RESET}
-  ${BOLD}WireGuard UI:${RESET}  ${CYAN}http://${ip}:10086${RESET}
   ${BOLD}SSH:${RESET}          ${CYAN}ppsa@${ip}${RESET}                  ${DIM}Password: ppsa${RESET}
 EOF
-            if [[ -n "$wg_ip" ]]; then
+            if [[ -n "$nb_ip" ]]; then
                 cat <<EOF
-  ${BOLD}WireGuard:${RESET}    ${CYAN}${wg_ip}${RESET}                    ${DIM}PPSA gaming network${RESET}
-  ${DIM}Players connect via pleaseee.eu.org:51830 (wg-easy UI: :51831)${RESET}
-
-EOF
-            elif [[ -f /etc/ppsa/wireguard.json ]] && \
-                 grep -q '"enabled"[[:space:]]*:[[:space:]]*true' /etc/ppsa/wireguard.json 2>/dev/null; then
-                # configured but not yet registered (register script is still polling)
-                cat <<EOF
-  ${DIM}WireGuard: registering with wg-easy (will retry on next boot if needed)${RESET}
+  ${BOLD}NetBird:${RESET}      ${CYAN}${nb_ip}${RESET}                    ${DIM}primary overlay — friends join via setup key${RESET}
 
 EOF
             else
-                # not configured at all
                 cat <<EOF
-  ${DIM}WireGuard: not connected (can be configured via WebUI)${RESET}
+  ${DIM}NetBird: enrolling (retries each boot until the control plane is reachable)${RESET}
 
 EOF
+            fi
+            if [[ "$wg_enabled" == true ]]; then
+                if [[ -n "$wg_ip" ]]; then
+                    cat <<EOF
+  ${BOLD}WireGuard:${RESET}    ${CYAN}${wg_ip}${RESET}                    ${DIM}legacy — wg-easy UI :10086${RESET}
+
+EOF
+                else
+                    cat <<EOF
+  ${DIM}WireGuard (legacy): registering with wg-easy (retries on next boot)${RESET}
+
+EOF
+                fi
             fi
         else
             cat <<EOF
