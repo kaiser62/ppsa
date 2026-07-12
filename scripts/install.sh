@@ -316,6 +316,12 @@ else
         systemctl disable ppsa-wireguard-register.service 2>/dev/null || true
         echo "  ppsa-wireguard-register.service: installed but disabled (re-enable via WebUI to activate WG)"
     fi
+    # The seed image bakes wg0.conf and enables wg-quick@wg0 even when WG is
+    # disabled (PPSA_WG_ENABLED=false), so the fallback tunnel comes up on
+    # every boot regardless of wireguard.json enabled:false.  Stop it and
+    # disable it so the legacy WG tunnel stays fully dormant.
+    systemctl disable --now wg-quick@wg0 2>/dev/null || true
+    echo "  wg-quick@wg0: stopped and disabled (dormant)"
 fi
 
 # PPSA WireGuard status snapshot (host-side timer that writes /etc/ppsa/wg-status.json
