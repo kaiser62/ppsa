@@ -384,9 +384,8 @@ ufw allow 51820/udp  # WireGuard tunnel (admin)
 ufw allow 51830/udp  # WireGuard tunnel (PPSA gaming)
 # Game (8211/udp, 27015/udp, 8212/tcp), Web UI (8080/tcp), and WG Dashboard
 # (10086/tcp) are intentionally NOT opened here. They are reachable only via
-# the WG_FRIENDS iptables chain for 10.8.0.0/24 (see ppsa-firewall-apply.sh),
-# i.e. WireGuard-friends-only, never directly from LAN/WAN.
-ufw allow from 192.168.50.0/24 to any port 8080 proto tcp  # onboarding hotspot only
+# the WG_FRIENDS iptables chain, which is jumped from the NetBird overlay
+# (100.64.0.0/10) — never directly from LAN/WAN.
 
 # SSH (22, 10022): LAN/WAN exposure is opt-in, baked at build time into
 # /etc/ppsa/network-policy.json (expose_ssh_lan, set via PPSA_EXPOSE_SSH_LAN
