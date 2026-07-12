@@ -321,7 +321,12 @@ else
     # every boot regardless of wireguard.json enabled:false.  Stop it and
     # disable it so the legacy WG tunnel stays fully dormant.
     systemctl disable --now wg-quick@wg0 2>/dev/null || true
-    echo "  wg-quick@wg0: stopped and disabled (dormant)"
+    # Remove baked conf so the wg-quick systemd generator doesn't
+    # recreate the unit on next boot (wg-quick@.service template has
+    # WantedBy=multi-user.target, and any .conf in /etc/wireguard/
+    # triggers auto-generation on Debian).
+    rm -f /etc/wireguard/wg0.conf 2>/dev/null || true
+    echo "  wg-quick@wg0: stopped, disabled, and conf removed (fully dormant)"
 fi
 
 # PPSA WireGuard status snapshot (host-side timer that writes /etc/ppsa/wg-status.json
