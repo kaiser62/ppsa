@@ -215,81 +215,14 @@ else
     echo "  WARNING: ppsa-wifi-onboard.sh/.service not found at $PPSA_DIR/scripts/"
 fi
 
-# --- Step 5: Auto-register as a peer in the PPSA WireGuard network ---
-# v1.1.x: connects to the wg-easy instance configured in
-# /etc/ppsa/wireguard.json (baked into the image at build time). If the
-# wg-easy API is unreachable (e.g., port forwarding not yet set up on the
-# user's router), the script logs a warning and continues — registration
-# can be retried later via the WebUI.
+# --- Step 6: NetBird enrollment (PRIMARY networking path) ---
+# As of the v1.3.0-nb line NetBird is the primary overlay: every appliance
+# enrolls with its OWN identity via the baked reusable setup key in
+# /etc/ppsa/netbird.json (uses wt0 in 100.64.0.0/10). Non-fatal — the boot
+# service retries every boot. WireGuard (step 7) is deprecated/off by default.
 mark_step 6
-echo "[6/9] Connecting to PPSA WireGuard network..."
+echo "[6/9] Enrolling in NetBird network..."
 
-# Read config to announce what we're about to do (and skip if disabled).
-wg_api_url=""; wg_peer_name=""; wg_enabled="false"
-if [ -f /etc/ppsa/wireguard.json ]; then
-    if command -v python3 >/dev/null 2>&1; then
-        eval "$(python3 -c '
-import json, sys
-try:
-    with open("/etc/ppsa/wireguard.json") as f:
-        c = json.load(f)
-    def esc(v): return str(v).replace(chr(92), chr(92)+chr(92)).replace(chr(34), chr(92)+chr(34)).replace(chr(36), chr(92)+chr(36)).replace(chr(96), chr(92)+chr(96))
-    print("wg_enabled="   + esc(str(c.get("enabled", False)).lower()))
-    print("wg_api_url="   + esc(c.get("api_url", "")))
-    print("wg_peer_name=" + esc(c.get("peer_name", "ppsa-server")))
-except Exception:
-    pass
-' 2>/dev/null)"
-    fi
-fi
-
-if [ "$wg_enabled" = "true" ] && [ -n "$wg_api_url" ]; then
-    echo "  Auto-registering with wg-easy at $wg_api_url as peer '$wg_peer_name'..."
-fi
-
-if [ -f "$PPSA_DIR/scripts/ppsa-wireguard-register.sh" ]; then
-    chmod +x "$PPSA_DIR/scripts/ppsa-wireguard-register.sh"
-    # The register script waits up to 120s internally (PPSA_WG_WAIT_TIMEOUT)
-    # for the wg-easy API to come up. The systemd service re-runs on every
-    # boot, so transient failures are self-healing. Outer timeout of 300s
-    # is just an absolute upper bound so install can't hang forever.
-    if timeout 300 "$PPSA_DIR/scripts/ppsa-wireguard-register.sh"; then
-        # Success: surface the assigned WG IP so it shows in the install log.
-        if [ -r /run/ppsa-wireguard-ip ]; then
-            wg_assigned_ip=$(cat /run/ppsa-wireguard-ip 2>/dev/null || true)
-            if [ -n "$wg_assigned_ip" ]; then
-                echo "  WireGuard connected: assigned IP $wg_assigned_ip (saved to /run/ppsa-wireguard-ip)"
-            fi
-        fi
-    else
-        RC=$?
-        if [ $RC -eq 124 ]; then
-            echo "  WireGuard registration still in progress (timed out at 300s). Will retry on next boot via ppsa-wireguard-register.service."
-        else
-            echo "  WireGuard registration skipped (rc=$RC). Will retry on next boot."
-        fi
-    fi
-else
-    echo "  ppsa-wireguard-register.sh not found, skipping"
-fi
-
-# Install + enable the systemd unit so re-registration (after power outage,
-# or after the user fills in /etc/ppsa/wireguard.json via the WebUI) can be
-# triggered via `systemctl start ppsa-wireguard-register.service`. Conditional
-# on the .service file being present in the repo (it ships as of v1.1.10+).
-if [ -f "$PPSA_DIR/scripts/ppsa-wireguard-register.service" ]; then
-    cp "$PPSA_DIR/scripts/ppsa-wireguard-register.service" /etc/systemd/system/ppsa-wireguard-register.service
-    systemctl daemon-reload
-    systemctl enable ppsa-wireguard-register.service
-    echo "  ppsa-wireguard-register.service: installed and enabled"
-else
-    echo "  ppsa-wireguard-register.service not found at $PPSA_DIR/scripts/, skipping"
-fi
-
-# --- NetBird enrollment (netbird branch: runs alongside WG, no conflict —
-# NetBird uses wt0 in 100.64.0.0/10, WG keeps wg0 in 10.8.0.0/24). Every
-# appliance enrolls with its OWN identity via the baked reusable setup key.
-# Non-fatal: the boot service retries on every boot.
 if [ -f "$PPSA_DIR/scripts/ppsa-netbird-up.sh" ]; then
     chmod +x "$PPSA_DIR/scripts/ppsa-netbird-up.sh"
     echo "  Enrolling in NetBird network (if configured)..."
@@ -309,8 +242,81 @@ if [ -f "$PPSA_DIR/scripts/ppsa-netbird-up.service" ]; then
     echo "  ppsa-netbird-up.service: installed and enabled"
 fi
 
+# --- Step 7: WireGuard (LEGACY / deprecated, off by default) ---
+# WireGuard stays baked for fallback but is disabled unless the image was
+# built with PPSA_WG_ENABLED=true (=> /etc/ppsa/wireguard.json "enabled":true)
+# or a user re-enables it via the WebUI. When disabled: the register.service
+# is installed but NOT enabled, and no registration runs.
 mark_step 7
-echo "[7/9] Enrolling in NetBird network..."
+echo "[7/9] WireGuard (legacy)..."
+
+# Read config: enabled flag + api url + peer name.
+wg_api_url=""; wg_peer_name=""; wg_enabled="false"
+if [ -f /etc/ppsa/wireguard.json ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        eval "$(python3 -c '
+import json, sys
+try:
+    with open("/etc/ppsa/wireguard.json") as f:
+        c = json.load(f)
+    def esc(v): return str(v).replace(chr(92), chr(92)+chr(92)).replace(chr(34), chr(92)+chr(34)).replace(chr(36), chr(92)+chr(36)).replace(chr(96), chr(92)+chr(96))
+    print("wg_enabled="   + esc(str(c.get("enabled", False)).lower()))
+    print("wg_api_url="   + esc(c.get("api_url", "")))
+    print("wg_peer_name=" + esc(c.get("peer_name", "ppsa-server")))
+except Exception:
+    pass
+' 2>/dev/null)"
+    fi
+fi
+
+if [ "$wg_enabled" = "true" ]; then
+    if [ -n "$wg_api_url" ]; then
+        echo "  Auto-registering with wg-easy at $wg_api_url as peer '$wg_peer_name'..."
+    fi
+    if [ -f "$PPSA_DIR/scripts/ppsa-wireguard-register.sh" ]; then
+        chmod +x "$PPSA_DIR/scripts/ppsa-wireguard-register.sh"
+        # The register script waits up to 120s internally (PPSA_WG_WAIT_TIMEOUT)
+        # for the wg-easy API to come up. The systemd service re-runs on every
+        # boot, so transient failures are self-healing. Outer timeout of 300s
+        # is just an absolute upper bound so install can't hang forever.
+        if timeout 300 "$PPSA_DIR/scripts/ppsa-wireguard-register.sh"; then
+            if [ -r /run/ppsa-wireguard-ip ]; then
+                wg_assigned_ip=$(cat /run/ppsa-wireguard-ip 2>/dev/null || true)
+                if [ -n "$wg_assigned_ip" ]; then
+                    echo "  WireGuard connected: assigned IP $wg_assigned_ip (saved to /run/ppsa-wireguard-ip)"
+                fi
+            fi
+        else
+            RC=$?
+            if [ $RC -eq 124 ]; then
+                echo "  WireGuard registration still in progress (timed out at 300s). Will retry on next boot via ppsa-wireguard-register.service."
+            else
+                echo "  WireGuard registration skipped (rc=$RC). Will retry on next boot."
+            fi
+        fi
+    else
+        echo "  ppsa-wireguard-register.sh not found, skipping"
+    fi
+    # Install + enable the boot re-registration unit.
+    if [ -f "$PPSA_DIR/scripts/ppsa-wireguard-register.service" ]; then
+        cp "$PPSA_DIR/scripts/ppsa-wireguard-register.service" /etc/systemd/system/ppsa-wireguard-register.service
+        systemctl daemon-reload
+        systemctl enable ppsa-wireguard-register.service
+        echo "  ppsa-wireguard-register.service: installed and enabled"
+    else
+        echo "  ppsa-wireguard-register.service not found at $PPSA_DIR/scripts/, skipping"
+    fi
+else
+    echo "  WireGuard is deprecated and disabled (NetBird is primary). Skipping registration."
+    # Still install the unit so a WebUI re-enable can start it later, but leave
+    # it DISABLED so it doesn't run on boot.
+    if [ -f "$PPSA_DIR/scripts/ppsa-wireguard-register.service" ]; then
+        cp "$PPSA_DIR/scripts/ppsa-wireguard-register.service" /etc/systemd/system/ppsa-wireguard-register.service
+        systemctl daemon-reload
+        systemctl disable ppsa-wireguard-register.service 2>/dev/null || true
+        echo "  ppsa-wireguard-register.service: installed but disabled (re-enable via WebUI to activate WG)"
+    fi
+fi
 
 # PPSA WireGuard status snapshot (host-side timer that writes /etc/ppsa/wg-status.json
 # every 5s for the webui container to read — avoids the wg-show-in-container netns issue)

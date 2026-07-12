@@ -29,6 +29,17 @@ The official quickstart generates `docker-compose.yml`, `management.json`,
 Dex config and secrets in `~/netbird` — they stay on the homeserver, never
 in git.
 
+> **CRITICAL — `exposedAddress` must carry an explicit `:443`.** The quickstart
+> writes `exposedAddress: 'https://<domain>'` with no port. Management still
+> works (defaults to 443), but the server then advertises the **Signal** URI to
+> peers *without a port* → clients dial `<domain>` portless → `dial context
+> deadline exceeded` on Signal → peers register and show in the dashboard but
+> **never form P2P**. `deploy.sh` auto-pins `:443`; if you edit config by hand,
+> ensure `exposedAddress: 'https://<domain>:443'`. After any server config
+> change, restart each enrolled client (`sudo systemctl restart netbird` /
+> `Restart-Service NetBird`) so it drops the cached portless signal address.
+> This is the #1 self-hosted connectivity gotcha.
+
 ## Setup keys (unattended enrollment)
 
 Dashboard → Setup Keys → create **reusable** keys:

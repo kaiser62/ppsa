@@ -1,5 +1,13 @@
 # Architecture
 
+> **Networking note.** As of the `v1.3.0-nb` line, **NetBird is the primary
+> overlay** (host `netbird.service` on `wt0`, `100.64.0.0/10`, self-hosted
+> control plane in `netbird-server/`). WireGuard (`wg0`, `10.8.0.0/24`, wg-easy)
+> is **deprecated and disabled by default** — kept baked for fallback, re-enabled
+> with `PPSA_WG_ENABLED=true`. The firewall `WG_FRIENDS` chain is jumped to from
+> both subnets; friend access works over whichever tunnel is up. See
+> [docs/netbird-setup.md](netbird-setup.md).
+
 ## Overview
 
 PPSA ships three artifact types built from the same core script,

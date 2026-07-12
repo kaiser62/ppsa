@@ -95,6 +95,8 @@ jobs:
           # WireGuard auto-registration creds, same as build-release.yml.
           # Without these the bundled seed ships enabled=false and installer
           # installs never join the WireGuard network.
+          # WG DEPRECATED (NetBird primary): baked disabled unless PPSA_WG_ENABLED='true'.
+          PPSA_WG_ENABLED: ${{ vars.PPSA_WG_ENABLED || 'false' }}
           PPSA_WG_API_URL: ${{ secrets.PPSA_WG_API_URL }}
           PPSA_WG_API_USER: ${{ secrets.PPSA_WG_API_USER }}
           PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}

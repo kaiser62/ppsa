@@ -44,6 +44,29 @@ echo "Deploying NetBird for domain: ${NETBIRD_DOMAIN}"
 export NETBIRD_DOMAIN
 curl -fsSL https://github.com/netbirdio/netbird/releases/latest/download/getting-started.sh | bash
 
+# --- CRITICAL: pin an explicit :443 on exposedAddress -------------------------
+# The quickstart writes `exposedAddress: 'https://<domain>'` WITHOUT a port.
+# Management derives :443 and works, but the combined server then advertises the
+# SIGNAL URI to peers WITHOUT a port -> clients dial `<domain>` with no port ->
+# `dial context deadline exceeded` on Signal -> peers register but never form
+# P2P. Pinning :443 fixes it (Signal URI becomes https://<domain>:443). This is
+# THE #1 self-hosted connectivity gotcha; do not remove.
+CFG=""
+for c in config.yaml management.json ./data/config.yaml; do
+    [ -f "$c" ] && CFG="$c" && break
+done
+if [ -n "$CFG" ] && grep -q "https://${NETBIRD_DOMAIN}'" "$CFG" 2>/dev/null; then
+    sed -i "s#https://${NETBIRD_DOMAIN}'#https://${NETBIRD_DOMAIN}:443'#g" "$CFG"
+    echo "Pinned :443 on exposedAddress in $CFG (signal port fix)."
+    docker compose restart 2>/dev/null || docker restart nb-server 2>/dev/null || true
+else
+    echo "WARN: could not auto-pin :443 — verify '${CFG:-config.yaml}' has exposedAddress: 'https://${NETBIRD_DOMAIN}:443' (WITH port), else Signal will fail for all peers."
+fi
+# NOTE: after ANY server config change, each already-enrolled client must
+# restart its agent to drop the cached (portless) signal address:
+#   Linux:   sudo systemctl restart netbird
+#   Windows: Restart-Service NetBird
+
 echo
 echo "=== Next steps ==="
 echo "1. Open https://${NETBIRD_DOMAIN} and create the owner account (or use the setup API)."

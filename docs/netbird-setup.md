@@ -1,4 +1,14 @@
-# NetBird networking (netbird branch, test builds v1.3.0-nb.N)
+# NetBird networking (primary; `netbird` mainline, `v1.3.0-nb.N`)
+
+> **Server gotcha #1 — pin `:443`.** The self-hosted control plane's
+> `config.yaml` **must** have `exposedAddress: 'https://<domain>:443'` with an
+> explicit port. Without it, management works but the **Signal** URI is
+> advertised portless → clients dial with no port → `dial context deadline
+> exceeded` on Signal → peers register and show in the dashboard but **never
+> form P2P**. `netbird-server/deploy.sh` auto-pins it; verify after any deploy.
+> After any server config change, restart each enrolled client
+> (`sudo systemctl restart netbird` / `Restart-Service NetBird`) so it drops the
+> cached portless signal address.
 
 ## Why
 

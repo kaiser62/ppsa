@@ -1,5 +1,14 @@
 # WireGuard Setup
 
+> **⚠️ DEPRECATED.** As of the `v1.3.0-nb` line, **NetBird is the primary
+> networking path** (see [docs/netbird-setup.md](netbird-setup.md)). WireGuard is
+> still baked into the image but **disabled by default** — first boot installs
+> `ppsa-wireguard-register.service` but leaves it disabled and no `wg0` comes up.
+> Re-enable by building the image with `PPSA_WG_ENABLED=true` (CI repo variable),
+> which sets `wireguard.json` `enabled:true` and re-arms the register service; or
+> flip it on at runtime via the WebUI. The rest of this doc describes WG when
+> active.
+
 PPSA auto-joins a **wg-easy** WireGuard network on first boot. Friends connect
 to the same network and play Palworld via the PPSA host's WireGuard IP — no
 port forwarding on the PPSA's own router required. This is also what gates

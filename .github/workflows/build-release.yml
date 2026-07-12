@@ -70,6 +70,9 @@ jobs:
           # PPSA_WG_API_PASS - wg-easy admin password
           # PPSA_WG_PEER_NAME - optional, defaults to 'ppsa-server'
           # PPSA_WG_PREFERRED_IP - optional, e.g. 10.8.0.2 (wg-easy v15 may ignore)
+          # WireGuard DEPRECATED (NetBird primary): baked disabled unless the
+          # repo variable PPSA_WG_ENABLED='true'. Creds stay wired for re-enable.
+          PPSA_WG_ENABLED: ${{ vars.PPSA_WG_ENABLED || 'false' }}
           PPSA_WG_API_URL: ${{ secrets.PPSA_WG_API_URL }}
           PPSA_WG_API_USER: ${{ secrets.PPSA_WG_API_USER }}
           PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}
@@ -176,6 +179,8 @@ jobs:
           TMPDIR: ${{ runner.temp }}
           PPSA_CACHE_FILE: /tmp/ppsa-rootfs-cache.tar.gz
           PPSA_SKIP_BOOTSTRAP: ${{ steps.cache-rootfs-vbox.outputs.cache-hit == 'true' && '1' || '' }}
+          # WG deprecated (NetBird primary): baked disabled unless PPSA_WG_ENABLED='true'.
+          PPSA_WG_ENABLED: ${{ vars.PPSA_WG_ENABLED || 'false' }}
           PPSA_WG_API_URL: ${{ secrets.PPSA_WG_API_URL }}
           PPSA_WG_API_USER: ${{ secrets.PPSA_WG_API_USER }}
           PPSA_WG_API_PASS: ${{ secrets.PPSA_WG_API_PASS }}

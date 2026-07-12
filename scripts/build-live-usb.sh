@@ -474,12 +474,17 @@ fi
 mkdir -p /etc/ppsa
 chmod 755 /etc/ppsa
 if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PPSA_WG_API_PASS:-}" ]; then
+    # WireGuard is DEPRECATED (NetBird is the primary networking path as of the
+    # v1.3.0-nb line). The wg-easy creds are still baked so WG can be re-enabled
+    # without re-registering, but "enabled" defaults to false — flip it on with
+    # PPSA_WG_ENABLED=true at build time. See docs/wireguard-setup.md.
+    if [ "${PPSA_WG_ENABLED:-false}" = "true" ]; then WG_ENABLED_JSON=true; else WG_ENABLED_JSON=false; fi
     # Empty optional values are fine: the register script treats "" as unset.
     # lan_endpoint/public_endpoint feed the runtime handshake-verified
     # endpoint fallback (public first, LAN if the public one stays silent).
     cat > /etc/ppsa/wireguard.json <<WGEOF
 {
-  "enabled": true,
+  "enabled": ${WG_ENABLED_JSON},
   "api_url": "${PPSA_WG_API_URL}",
   "api_user": "${PPSA_WG_API_USER}",
   "api_password": "${PPSA_WG_API_PASS}",
@@ -489,7 +494,7 @@ if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PP
   "public_endpoint": "${PPSA_WG_PUBLIC_ENDPOINT:-}"
 }
 WGEOF
-    echo "PPSA WireGuard config: baked in (peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: '${PPSA_WG_PREFERRED_IP:-}', lan_endpoint: '${PPSA_WG_LAN_ENDPOINT:-}', public_endpoint: '${PPSA_WG_PUBLIC_ENDPOINT:-}')"
+    echo "PPSA WireGuard config: baked in (enabled=${WG_ENABLED_JSON} [deprecated; set PPSA_WG_ENABLED=true to activate], peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: '${PPSA_WG_PREFERRED_IP:-}', lan_endpoint: '${PPSA_WG_LAN_ENDPOINT:-}', public_endpoint: '${PPSA_WG_PUBLIC_ENDPOINT:-}')"
     chmod 600 /etc/ppsa/wireguard.json
 else
     cat > /etc/ppsa/wireguard.json <<WGEOF
@@ -814,13 +819,16 @@ fi  # end of PPSA_SKIP_BOOTSTRAP conditional
 mkdir -p "$ROOTFS_DIR/etc/ppsa"
 chmod 755 "$ROOTFS_DIR/etc/ppsa"
 if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PPSA_WG_API_PASS:-}" ]; then
+    # WG deprecated (NetBird primary): enabled defaults false, flip on with
+    # PPSA_WG_ENABLED=true. Mirror of the in-chroot bake above.
+    if [ "${PPSA_WG_ENABLED:-false}" = "true" ]; then WG_ENABLED_JSON=true; else WG_ENABLED_JSON=false; fi
     # Single write with every field (empty string when unset), matching the
     # in-chroot bake. Earlier this had two branches that omitted lan_endpoint
     # and public_endpoint entirely, so a cache-hit rebuild (which runs this
     # outside-chroot path) silently dropped them from the baked config.
     cat > "$ROOTFS_DIR/etc/ppsa/wireguard.json" <<WGEOF
 {
-  "enabled": true,
+  "enabled": ${WG_ENABLED_JSON},
   "api_url": "${PPSA_WG_API_URL}",
   "api_user": "${PPSA_WG_API_USER}",
   "api_password": "${PPSA_WG_API_PASS}",
@@ -831,7 +839,7 @@ if [ -n "${PPSA_WG_API_URL:-}" ] && [ -n "${PPSA_WG_API_USER:-}" ] && [ -n "${PP
 }
 WGEOF
     chmod 600 "$ROOTFS_DIR/etc/ppsa/wireguard.json"
-    echo "PPSA WireGuard config: re-baked (peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: '${PPSA_WG_PREFERRED_IP:-}', lan_endpoint: '${PPSA_WG_LAN_ENDPOINT:-}', public_endpoint: '${PPSA_WG_PUBLIC_ENDPOINT:-}')"
+    echo "PPSA WireGuard config: re-baked (enabled=${WG_ENABLED_JSON} [deprecated; set PPSA_WG_ENABLED=true to activate], peer: ${PPSA_WG_PEER_NAME:-ppsa-server}, preferred_ip: '${PPSA_WG_PREFERRED_IP:-}', lan_endpoint: '${PPSA_WG_LAN_ENDPOINT:-}', public_endpoint: '${PPSA_WG_PUBLIC_ENDPOINT:-}')"
 else
     # Don't overwrite the cached (or newly-built) file if we have no creds.
     # The cached version, if any, wins; otherwise install.sh's WebUI flow

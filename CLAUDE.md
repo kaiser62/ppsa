@@ -10,19 +10,27 @@ Compose. Ships three artifact types from the same `build-live-usb.sh` core:
 a raw USB/SSD image, a VirtualBox VDI, and a live-boot installer ISO (writes
 PPSA onto a spare drive/partition without touching the host OS).
 
-## Branch strategy (two parallel fronts)
+## Branch strategy
 
-- **`master`** — WireGuard mainline, ships `v1.2.x` tags. All shared-code work
-  (WebUI, firewall, build script, installer) lands HERE first.
-- **`netbird`** — NetBird networking test line, ships `v1.3.0-nb.N` prerelease
-  tags (a hyphen in the tag auto-marks the GitHub release as prerelease).
-  Sync direction is one-way: `git merge master` into `netbird` — never the
-  reverse until the NetBird line is promoted to mainline.
-- Tag `v1.3.0-nb.N` only from the `netbird` branch. Installer ISO for the
-  branch: `gh workflow run build-installer.yml --ref netbird -f version=v1.3.0-nb.N`.
-- NetBird CI secrets are additive (`PPSA_NB_SETUP_KEY`,
-  `PPSA_NB_MANAGEMENT_URL`); the WG secrets stay untouched so master builds
-  keep working.
+- **`netbird`** — the **default/mainline** branch. NetBird is the **primary**
+  networking path. Ships `v1.3.0-nb.N` prerelease tags (a hyphen in the tag
+  auto-marks the GitHub release as prerelease). All new work lands here.
+- **`master`** — **frozen/archived** WireGuard-only history (`v1.2.x` tags). Do
+  not commit or tag from it anymore; kept only so old release/PR links resolve.
+- **WireGuard is deprecated but retained**: the WG stack (wg-easy registration,
+  fallback conf, wgdashboard, firewall jump) is still baked into the image, but
+  **disabled by default** at first boot. Re-enable by building with
+  `PPSA_WG_ENABLED=true` (CI repo variable) — that flips `wireguard.json`
+  `enabled` to true and re-arms `ppsa-wireguard-register.service`. First boot
+  otherwise leaves the WG unit installed-but-disabled and no wg0 comes up.
+- Installer ISO: `gh workflow run build-installer.yml --ref netbird -f version=v1.3.0-nb.N`.
+- CI secrets: `PPSA_NB_SETUP_KEY` + `PPSA_NB_MANAGEMENT_URL` drive NetBird
+  enrollment; `PPSA_WG_*` secrets stay wired (for the re-enable path) but are
+  dormant unless `PPSA_WG_ENABLED=true`.
+- Self-hosted NetBird control plane lives in `netbird-server/` (deploy on the
+  homeserver). **Its `config.yaml exposedAddress` must carry an explicit `:443`**
+  or Signal is advertised portless and no peer forms P2P — see
+  `netbird-server/README.md`.
 
 ## Commands
 
@@ -141,10 +149,12 @@ globally via `ufw` in `install.sh`. Game/WebUI/WGDashboard ports
 (`8211/udp`, `27015/udp`, `8212/tcp`, `8080/tcp`, `10086/tcp`) are **not**
 opened globally — they're reachable only through the `WG_FRIENDS` iptables
 chain (`scripts/ppsa-firewall-apply.sh`), which is inserted at the top of
-`INPUT` and only matches the `10.8.0.0/24` WireGuard-friends subnet. A narrow
-exception exists for the onboarding hotspot subnet (`192.168.50.0/24`) on
-port 8080, so a first-time user can reach the WebUI to configure WireGuard
-before any tunnel exists. The `WG_FRIENDS` chain's allowed-port list is
+`INPUT`. That chain is now jumped to from **two** source subnets: the NetBird
+overlay `100.64.0.0/10` (the primary path) and the legacy WireGuard
+`10.8.0.0/24` (harmless no-op when WG is disabled and wg0 is absent). The chain
+name is historical — it gates friend access over whichever tunnel is up. A
+narrow exception exists for the onboarding hotspot subnet (`192.168.50.0/24`)
+on port 8080, so a first-time user can reach the WebUI before any tunnel exists. The `WG_FRIENDS` chain's allowed-port list is
 itself editable at runtime from the WebUI's Firewall tab (writes
 `firewall.json`, re-applied by `ppsa-firewall-apply.sh`).
 
