@@ -114,6 +114,18 @@ if ! iptables -C INPUT -s "$NB_NET" -j "$CHAIN" 2>/dev/null; then
   iptables -I INPUT 1 -s "$NB_NET" -j "$CHAIN"
 fi
 
+# --- DOCKER-USER: block LAN/WAN for published ports, allow overlay ---
+# Docker's published ports (8080, 8211, etc.) insert DNAT rules that
+# bypass UFW and make the ports reachable from any LAN/WAN interface.
+# Block all non-overlay traffic here (DOCKER-USER is evaluated before
+# Docker's own FORWARD rules).
+for _port in 8080 8211 8212 10086 27015 25575; do
+    iptables -I DOCKER-USER -p tcp --dport $_port ! -s "$NB_NET" -j DROP 2>/dev/null || true
+done
+for _port in 8211 27015; do
+    iptables -I DOCKER-USER -p udp --dport $_port ! -s "$NB_NET" -j DROP 2>/dev/null || true
+done
+
 # --- Persistence ---
 # Deliberately NO `iptables-save` snapshot here. The source of truth for the
 # WG_FRIENDS chain is firewall.json (persisted under /etc/ppsa or the webui

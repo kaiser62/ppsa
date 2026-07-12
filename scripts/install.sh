@@ -386,6 +386,14 @@ ufw allow 51830/udp  # WireGuard tunnel (PPSA gaming)
 # (10086/tcp) are intentionally NOT opened here. They are reachable only via
 # the WG_FRIENDS iptables chain, which is jumped from the NetBird overlay
 # (100.64.0.0/10) — never directly from LAN/WAN.
+# Docker-published ports bypass UFW via their own iptables DNAT rules, so
+# drop LAN/WAN traffic in the DOCKER-USER chain; overlay is the only source.
+for _port in 8080 8211 8212 10086 27015 25575; do
+    iptables -I DOCKER-USER -p tcp --dport $_port ! -s 100.64.0.0/10 -j DROP 2>/dev/null || true
+done
+for _port in 8211 27015; do
+    iptables -I DOCKER-USER -p udp --dport $_port ! -s 100.64.0.0/10 -j DROP 2>/dev/null || true
+done
 
 # SSH (22, 10022): LAN/WAN exposure is opt-in, baked at build time into
 # /etc/ppsa/network-policy.json (expose_ssh_lan, set via PPSA_EXPOSE_SSH_LAN
