@@ -243,11 +243,22 @@ fi
 # creds first made an unconfigured box fail with exit 1 and sit in a
 # systemd auto-restart loop instead of exiting 0 quietly.
 if [[ "${ENABLED}" == "false" ]]; then
-    log "WireGuard registration disabled in config (enabled=false)"
-    # Still apply the hardcoded failsafe if one was baked in — "disabled"
-    # here just means "no wg-easy auto-registration configured", not "this
-    # device should have no tunnel at all".
-    try_fallback || true
+    log "WireGuard disabled in config (enabled=false); NetBird is the primary path"
+    # WireGuard is deprecated and dormant by default (PPSA_WG_ENABLED=false at
+    # build time). "disabled" now means "no WG tunnel at all", NOT "skip
+    # auto-registration but still bring up the failsafe". Do NOT call
+    # try_fallback here: it would install the baked fallback conf and run
+    # `wg-quick up wg0` directly (out of band from the wg-quick@wg0 unit),
+    # leaving a live wg0 that install.sh's `systemctl disable --now
+    # wg-quick@wg0` cannot tear down. Tear down any tunnel a prior
+    # (baked-enabled) run of this service may have raised, so the box ends up
+    # truly dormant even on the very first boot.
+    if ip link show "${WG_INTERFACE}" >/dev/null 2>&1; then
+        wg-quick down "${WG_INTERFACE}" 2>/dev/null \
+            || ip link del "${WG_INTERFACE}" 2>/dev/null \
+            || true
+        log "Tore down pre-existing ${WG_INTERFACE} (WG is dormant)"
+    fi
     exit 0
 fi
 
