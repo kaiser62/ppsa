@@ -119,11 +119,21 @@ fi
 # bypass UFW and make the ports reachable from any LAN/WAN interface.
 # Block all non-overlay traffic here (DOCKER-USER is evaluated before
 # Docker's own FORWARD rules).
+#
+# CRITICAL: match `-m conntrack --ctstate DNAT` so these DROPs only hit
+# externally-initiated traffic to a *published* port (Docker DNATs those in
+# PREROUTING before FORWARD). Without it, DOCKER-USER also sees container
+# *egress* whose destination port happens to equal a service port, and drops
+# it — e.g. palworld's SteamCMD dials Steam CM servers on 27015 (same as the
+# game query port), so an unqualified `--dport 27015 DROP` blocks the Steam
+# login/download entirely ("Connecting anonymously to Steam Public...Retrying"
+# forever, server never installs). Container egress is SNAT/MASQUERADE, not
+# DNAT, so the ctstate match excludes it while still blocking real inbound.
 for _port in 8080 8211 8212 10086 27015 25575; do
-    iptables -I DOCKER-USER -p tcp --dport $_port ! -s "$NB_NET" -j DROP 2>/dev/null || true
+    iptables -I DOCKER-USER -p tcp --dport $_port -m conntrack --ctstate DNAT ! -s "$NB_NET" -j DROP 2>/dev/null || true
 done
 for _port in 8211 27015; do
-    iptables -I DOCKER-USER -p udp --dport $_port ! -s "$NB_NET" -j DROP 2>/dev/null || true
+    iptables -I DOCKER-USER -p udp --dport $_port -m conntrack --ctstate DNAT ! -s "$NB_NET" -j DROP 2>/dev/null || true
 done
 
 # --- Persistence ---
