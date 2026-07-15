@@ -167,17 +167,36 @@ locale-gen
 echo "LANG=en_US.UTF-8" > /etc/default/locale
 echo "LC_ALL=en_US.UTF-8" >> /etc/default/locale
 
-# --- DNS: write a static resolv.conf pointing to public resolvers ---
-# Avoids the systemd-resolved 127.0.0.53#53 connection-refused trap.
-# On a server appliance, public DNS is more reliable than depending on
-# systemd-resolved (which may not be enabled in minimal images) or
-# DHCP-supplied DNS (which is empty until network comes up).
-cat > /etc/resolv.conf <<'DNSEOF'
-nameserver 8.8.8.8
-nameserver 1.1.1.1
-nameserver 9.9.9.9
-options edns0 trust-ad
-DNSEOF
+# --- DNS: prefer the DHCP/router-supplied resolver, public DNS as fallback ---
+# The appliance must resolve names on ANY network, including ones whose
+# router/ISP blocks or hijacks public resolvers (8.8.8.8/1.1.1.1/9.9.9.9) and
+# only answers DNS on the LAN's own server. A baked *public-only* resolv.conf
+# breaks those networks completely — nothing resolves, so BOTH the Palworld
+# Steam download ("Connecting anonymously to Steam Public...Retrying" forever)
+# AND NetBird's control-plane lookup (nb.<domain>) fail, and the box looks
+# "dead" over the overlay even though the link is up. It also regressed on
+# normal networks here: resolvconf (pulled in as a NM/ifupdown dependency)
+# rewrote the static file down to a single public nameserver and dropped the
+# router's DNS entirely.
+#
+# Fix: make systemd-resolved the single DNS owner. systemd-networkd hands it
+# the DHCP-supplied DNS (the router — always correct for the local network) as
+# the PRIMARY resolver; FallbackDNS below is used only when DHCP provides none
+# (cold boot before a lease, or static addressing). Point /etc/resolv.conf at
+# resolved's *networkd* file (which lists the real upstreams) rather than the
+# 127.0.0.53 stub, so we keep DHCP-first behaviour without the old
+# "stub present but service down = connection refused" trap.
+systemctl enable systemd-resolved
+mkdir -p /etc/systemd/resolved.conf.d
+cat > /etc/systemd/resolved.conf.d/ppsa-dns.conf <<'RESOLVEDEOF'
+[Resolve]
+FallbackDNS=1.1.1.1 8.8.8.8 9.9.9.9
+RESOLVEDEOF
+ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+# resolvconf would fight resolved for /etc/resolv.conf and reintroduce the
+# public-only file. It's only a Recommends of NM/ifupdown, so purging it is
+# safe and leaves resolved as the sole manager.
+apt-get purge -y -qq resolvconf 2>/dev/null || true
 
 # --- Hostname ---
 echo "ppsa" > /etc/hostname
@@ -297,7 +316,11 @@ systemctl enable systemd-networkd
 cat > /etc/NetworkManager/NetworkManager.conf <<'NMEOF'
 [main]
 plugins=ifupdown,keyfile
-dns=default
+# Route wlan0's DNS (Wi-Fi onboarding) through systemd-resolved too, so
+# resolved is the single DNS owner for every interface (see the resolv.conf
+# setup above). `dns=default` let NM overwrite /etc/resolv.conf and fight
+# resolved's symlink.
+dns=systemd-resolved
 [ifupdown]
 managed=false
 [keyfile]
