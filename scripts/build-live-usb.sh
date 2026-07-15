@@ -167,36 +167,19 @@ locale-gen
 echo "LANG=en_US.UTF-8" > /etc/default/locale
 echo "LC_ALL=en_US.UTF-8" >> /etc/default/locale
 
-# --- DNS: prefer the DHCP/router-supplied resolver, public DNS as fallback ---
-# The appliance must resolve names on ANY network, including ones whose
-# router/ISP blocks or hijacks public resolvers (8.8.8.8/1.1.1.1/9.9.9.9) and
-# only answers DNS on the LAN's own server. A baked *public-only* resolv.conf
-# breaks those networks completely — nothing resolves, so BOTH the Palworld
-# Steam download ("Connecting anonymously to Steam Public...Retrying" forever)
-# AND NetBird's control-plane lookup (nb.<domain>) fail, and the box looks
-# "dead" over the overlay even though the link is up. It also regressed on
-# normal networks here: resolvconf (pulled in as a NM/ifupdown dependency)
-# rewrote the static file down to a single public nameserver and dropped the
-# router's DNS entirely.
-#
-# Fix: make systemd-resolved the single DNS owner. systemd-networkd hands it
-# the DHCP-supplied DNS (the router — always correct for the local network) as
-# the PRIMARY resolver; FallbackDNS below is used only when DHCP provides none
-# (cold boot before a lease, or static addressing). Point /etc/resolv.conf at
-# resolved's *networkd* file (which lists the real upstreams) rather than the
-# 127.0.0.53 stub, so we keep DHCP-first behaviour without the old
-# "stub present but service down = connection refused" trap.
-systemctl enable systemd-resolved
-mkdir -p /etc/systemd/resolved.conf.d
-cat > /etc/systemd/resolved.conf.d/ppsa-dns.conf <<'RESOLVEDEOF'
-[Resolve]
-FallbackDNS=1.1.1.1 8.8.8.8 9.9.9.9
-RESOLVEDEOF
-ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-# resolvconf would fight resolved for /etc/resolv.conf and reintroduce the
-# public-only file. It's only a Recommends of NM/ifupdown, so purging it is
-# safe and leaves resolved as the sole manager.
-apt-get purge -y -qq resolvconf 2>/dev/null || true
+# --- DNS (build-time): static public resolv.conf so apt + the netbird/binary
+# downloads below can resolve inside the chroot. This is NOT the runtime DNS
+# config — at the END of this chroot script we switch the RUNTIME appliance to
+# systemd-resolved (DHCP/router DNS first, public only as fallback). See the
+# "Runtime DNS" block near the end. Keeping a real file here (not a resolved
+# symlink) is required because a dangling /run/systemd/resolve symlink would
+# break every apt/curl that follows during the build.
+cat > /etc/resolv.conf <<'DNSEOF'
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+nameserver 9.9.9.9
+options edns0 trust-ad
+DNSEOF
 
 # --- Hostname ---
 echo "ppsa" > /etc/hostname
@@ -807,6 +790,47 @@ cat > /etc/motd <<MOTDEOF
 ║     progress during install.                     ║
 ╚══════════════════════════════════════════════════╝
 MOTDEOF
+
+# --- Runtime DNS: DHCP/router resolver first, public only as fallback ---
+# Done LAST in the chroot, after every apt/curl above has used the static
+# build-time resolv.conf. The appliance must resolve names on ANY network,
+# including ones whose router/ISP blocks or hijacks public resolvers and only
+# answers on the LAN's own DNS. A baked public-only resolv.conf broke both the
+# Palworld Steam download and NetBird's control-plane lookup on such networks
+# (box goes dark over the overlay), and even on normal networks openresolv
+# rewrote it down to a single public nameserver, dropping the router's DNS.
+#
+# systemd-resolved becomes the single owner: systemd-networkd feeds it the
+# DHCP-supplied (router) DNS as the primary resolver; FallbackDNS is used only
+# when DHCP provides none. /etc/resolv.conf points at resolved's *networkd*
+# file (real upstream list, not the 127.0.0.53 stub) so containers copy working
+# upstreams. Installing the package here (not earlier) is deliberate: its
+# postinst repoints /etc/resolv.conf at a /run symlink that is dangling inside
+# the chroot, which would break any apt/curl that followed. The main install
+# block already wiped /var/lib/apt/lists, so refresh before installing (the
+# static build-time resolv.conf above is still in place, so this resolves).
+apt-get update -qq
+apt-get install -y -qq systemd-resolved
+mkdir -p /etc/systemd/resolved.conf.d
+cat > /etc/systemd/resolved.conf.d/ppsa-dns.conf <<'RESOLVEDEOF'
+[Resolve]
+FallbackDNS=1.1.1.1 8.8.8.8 9.9.9.9
+RESOLVEDEOF
+systemctl enable systemd-resolved
+ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+# openresolv is installed for wg-quick's DNS= (legacy WG). Stop it from also
+# writing /etc/resolv.conf and clobbering resolved's symlink; it stays usable
+# for wg-quick's own record store if WG is ever re-enabled.
+if [ -f /etc/resolvconf.conf ]; then
+    if grep -q '^resolv_conf=' /etc/resolvconf.conf; then
+        sed -i 's|^resolv_conf=.*|resolv_conf=/run/resolvconf/ppsa-unused.conf|' /etc/resolvconf.conf
+    else
+        echo 'resolv_conf=/run/resolvconf/ppsa-unused.conf' >> /etc/resolvconf.conf
+    fi
+fi
+# Re-clean the apt metadata the late install re-fetched, to keep the seed lean.
+apt-get clean
+rm -rf /var/lib/apt/lists/*
 
 echo "Chroot setup complete."
 CHROOTEOF
