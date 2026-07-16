@@ -12,8 +12,9 @@ last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 5
+  total_plans: 3
   completed_plans: 2
+  summaries_written: 2
 ---
 
 # Project State
@@ -27,15 +28,15 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 
 ## Current Position
 
-### Phase 01 (overlay-access) — COMPLETED
-Plan: 1 of 1
-Status: CP1 verified, CP2 signed off by user — NetBird static IP pinning, SSH-over-NetBird, first-boot, Docker stack, firewall all confirmed.
-Last activity: 2026-07-17
+### Phase 01 (overlay-access) — COMPLETED (w/ caveats)
+Plan: 1 of 1 — SUMMARY.md written
+Status: Task 1 (test-peer artifacts, doc) completed and committed. Task 2 (live re-enrollment against a real VM, SKILL.md update) not executed. Broader NetBird-mainline promotion work done separately.
+Last activity: 2026-07-17 — SUMMARY.md created
 
 ### Phase 03 (webui-backup-restore) — EXECUTING
-Plans: 2 of 2 complete (03-01-PLAN.md, 03-02-PLAN.md)
-Status: Implementation complete — backend endpoints (save-file, restore, restore-upload) + frontend (UI buttons, actions column, upload card, JS handlers). Summary written.
-Last activity: 2026-07-17 — Implementation done
+Plans: 2 of 2 written; 1 of 2 summaries written
+Status: Backend save-file/restore/restore-upload endpoints + frontend UI implemented. 03-02-SUMMARY.md pending.
+Last activity: 2026-07-17 — Implementation done, summary pending
 
 Progress: [███░░░░░░░] 33%
 
