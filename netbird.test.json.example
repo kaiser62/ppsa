@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to netbird.test.json (gitignored) for TEST VMs ONLY. This is a dedicated, reusable NetBird setup key created in its own dashboard group (e.g. 'test-vms'), separate from the appliance's own PPSA_NB_SETUP_KEY / netbird.local.json. Never reuse the appliance's own key or identity for a test VM -- doing so recreates the shared-identity hazard the WG 10.8.0.2 pattern had. See docs/netbird-test-peer.md for the full enrollment procedure.",
+  "enabled": true,
+  "management_url": "https://nb.pleaseee.eu.org",
+  "setup_key": "REUSABLE-TEST-VM-SETUP-KEY-FROM-DASHBOARD"
+}

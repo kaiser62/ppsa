@@ -14,6 +14,11 @@ wireguard.local.json
 # CI builds read PPSA_NB_MANAGEMENT_URL / PPSA_NB_SETUP_KEY secrets instead.
 netbird.local.json
 
+# Local NetBird TEST-PEER config (dedicated key, VM identities only — never
+# the appliance's own key). Copy netbird.test.json.example to
+# netbird.test.json and fill in. See docs/netbird-test-peer.md.
+netbird.test.json
+
 # Local hardcoded WireGuard failsafe config (raw wg0.conf, gitignored — the
 # CI build reads the base64'd equivalent from the PPSA_WG_FALLBACK_CONF_B64
 # repo secret instead, never from this file).
