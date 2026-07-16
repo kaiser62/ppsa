@@ -54,3 +54,6 @@ netbird-deployment.cont.md
 .playwright-mcp/
 .vagrant-mcp/
 backups/
+
+# Smoke test logs (raw command output from ppsa-smoke-test.py)
+smoke-test-logs/

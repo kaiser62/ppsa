@@ -17,6 +17,18 @@ End-to-end recipe: fresh VM → installer TUI → installed first boot → funct
   curl -s -b cj.txt http://pleaseee.eu.org:51831/api/client   # look at latestHandshakeAt/endpoint for "ppsa-server"
   ```
 
+## Verification pipeline
+
+```
+CI build (GitHub Actions) --> boot ISO in VBox --> first boot completes
+    --> [Phase 1: SSH overlay setup] --> [Phase 2: smoke-test.py] --> PASS / FAIL
+```
+
+Phase 1 (`docs/netbird-test-peer.md`) gives the test VM a stable NetBird DNS
+label and SSH reachable over the overlay. Phase 2
+(`scripts/ppsa-smoke-test.py`) drives the full install verification checklist
+over that SSH connection and returns a single pass/fail summary.
+
 ## 1. Create VM (PowerShell)
 
 ```powershell
@@ -87,32 +99,76 @@ LAN SSH is BLOCKED by design (WG-only). Recipe:
    `ppsa` has passwordless sudo (`sudo -n`).
 4. Copy files in with pscp (same -hostkey/-pw flags).
 
-## 5. Verification checklist
+### Phase 1+ path: SSH over NetBird overlay (steady state)
 
-Over SSH:
+After the one-time console bootstrap, the Phase 1 procedure
+([`docs/netbird-test-peer.md`](../../docs/netbird-test-peer.md)) can set up a
+persistent NetBird test-peer identity and stable DNS label. Once that's done,
+subsequent access uses plain SSH to the NetBird address — no console injection
+or ufw exception needed.
+
+From the designated NetBird dev peer (verify with `netbird status` locally first):
 
 ```bash
-# Stack: expect 5 containers, healthy/starting
-sudo -n docker ps --format '{{.Names}} {{.Status}}'
-# ppsa-webui ppsa-palworld ppsa-watchtower ppsa-wgdashboard ppsa-backup
+# Windows (plink):
+plink -ssh -batch -hostkey "SHA256:<from-first-attempt>" -pw ppsa ppsa@<netbird-dns-label> "<cmd>"
 
-# Firewall chain present on HOST
-sudo -n iptables -S WG_FRIENDS
-
-# WG (only if identity-safe, see hard rules)
-sudo -n wg show wg0   # expect peer + fresh handshake, endpoint 118.179.74.23:51830
-
-# WebUI API (login is HTTP Basic on POST /api/login → JWT Bearer)
-TOKEN=$(curl -s -X POST http://localhost:8080/api/login -u admin:admin | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-curl -s http://localhost:8080/api/firewall/status -H "Authorization: Bearer $TOKEN"   # rules + chain_present:true
-curl -s http://localhost:8080/api/backup/status   -H "Authorization: Bearer $TOKEN"
-curl -s -X POST http://localhost:8080/api/backup/trigger -H "Authorization: Bearer $TOKEN"
-curl -s -X POST http://localhost:8080/api/firewall/apply  -H "Authorization: Bearer $TOKEN"
+# Linux/macOS:
+ssh -o StrictHostKeyChecking=accept-new ppsa@<netbird-dns-label>
 ```
 
-Over WG (from hub or a WG peer, when identity-safe): ping 10.8.0.2, WebUI :8080, WGDashboard :10086, SSH :22 — all must work; LAN-direct SSH must stay blocked (before the ufw exception).
+The NetBird DNS label (e.g. `ppsa-ppsa-test.nb.pleaseee.eu.org`) is stable across
+reboots and reinstalls of the same logical test VM. See
+`docs/netbird-test-peer.md` for the full test-peer setup procedure including the
+one-time console-inject enrollment step that creates this identity.
 
-**Reboot survival:** `sudo reboot`, wait ~90s, re-run the checklist. Everything must come back with zero manual steps (wg-quick@wg0 + register + docker-compose + firewall-restore units).
+## 5. Verification checklist
+
+### Automated smoke test (canonical)
+
+After SSH access is established (via Phase 1 NetBird path or ufw bootstrap),
+run the one-shot smoke test script from the developer host:
+
+```bash
+# On the dev host (Windows: uses plink, Linux: uses ssh):
+python scripts/ppsa-smoke-test.py <netbird-dns-label>
+# or if only the overlay IP is known:
+python scripts/ppsa-smoke-test.py 100.70.169.201
+```
+
+The script runs ~26 checks across 10 groups (SSH, Auth, Stack, System,
+Firewall, NetBird, WG Dormancy, Backup, nb.12 Regression Guard, API
+Integrity). Output: one PASS/FAIL summary to stdout, raw output to
+`smoke-test-logs/ppsa-smoke-*.log`.
+
+A **PASS** result means the install is good. A **FAIL** result lists every
+failed check with the assertion that triggered it, plus the full command
+output in the log file for debugging.
+
+See `scripts/ppsa-smoke-test.py --help` for CLI options (custom SSH port,
+password, key file, log directory, verbose mode).
+
+### Manual ad-hoc checks (for development)
+
+Quick one-liners for investigation during development (not for release
+verification):
+
+```bash
+# Container status
+sudo -n docker ps --format '{{.Names}} {{.Status}}'
+
+# Firewall chain (from the WebUI export, not raw iptables — see _host_exec limits)
+curl -sf http://localhost:8080/api/firewall/status -H "Authorization: Bearer $TOKEN"
+
+# NetBird connectivity
+curl -sf http://localhost:8080/api/netbird/status -H "Authorization: Bearer $TOKEN"
+
+# WebUI login + token (HTTP Basic on POST)
+TOKEN=$(curl -s -X POST http://localhost:8080/api/login -u admin:admin | python -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+```
+
+**Reboot survival:** run `python scripts/ppsa-smoke-test.py <address>` after
+a reboot. Everything must come back with zero manual steps.
 
 ## 6. Patch-under-test deployment (when testing uncommitted fixes)
 
