@@ -2,19 +2,24 @@
 # PPSA - Main Docker Stack (Phase 2: hardened)
 # =============================================================================
 
+# ponytail: docker-volume-backup reads `stop-during-backup` from CONTAINERS,
+# never from volumes — these labels used to sit here and were silently ignored,
+# so offen backed up palworld_data HOT. Palworld's live in-game backup dir
+# (Pal/Saved/SaveGames/*/backup/world/<ts>) rotates mid-tar, a file vanishes
+# between walk and read, and the WHOLE archive aborts ("lstat: no such file or
+# directory") — every backup failed, none were ever written. The stop label now
+# lives on the palworld SERVICE (see below) so offen stops it for a consistent
+# snapshot. webui/wgdashboard volumes are small and static enough to tar hot.
 volumes:
   palworld_data:
     labels:
       - "ppsa.volume=palworld"
-      - "docker-volume-backup.stop-during-backup=true"
   wgdashboard_data:
     labels:
       - "ppsa.volume=wgdashboard"
-      - "docker-volume-backup.stop-during-backup=true"
   webui_data:
     labels:
       - "ppsa.volume=webui"
-      - "docker-volume-backup.stop-during-backup=true"
 
 # ponytail: single default network. Per-service network isolation adds complexity
 # for negligible security gain behind UFW. Add if multi-tenant needed.
@@ -72,6 +77,12 @@ services:
         max-file: "3"
     labels:
       - "ppsa.component=palworld"
+      # ponytail: offen stops this container for the duration of a backup so the
+      # world save + SaveGames tree is consistent and doesn't churn mid-tar.
+      # Trade-off: a backup (scheduled 3AM or manual "Backup Now") briefly drops
+      # players for the length of the tar. Required — hot backups of the live
+      # save dir fail outright (see the volumes block above).
+      - "docker-volume-backup.stop-during-backup=true"
 
   # ---------------------------------------------------------------------------
   # Web Management UI

@@ -217,7 +217,20 @@ def _run_docker(cmd: list[str]) -> str:
         if sub == "exec":
             container = _docker.containers.get(cmd[1])
             exec_cmd = cmd[2:]
-            exec_result = container.exec_run(exec_cmd)
+            # ponytail: `--detach` fires the command inside the container and
+            # returns immediately. Needed for /api/backup/trigger — offen's
+            # `backup` runs a multi-GB tar+gzip in the foreground; running it
+            # synchronously here blocked the uvicorn event loop for the whole
+            # backup, freezing the entire WebUI ("everything crashed" on a
+            # manual backup save). Detached, the UI returns instantly and the
+            # backup runs in the background.
+            detach = False
+            if exec_cmd and exec_cmd[0] == "--detach":
+                detach = True
+                exec_cmd = exec_cmd[1:]
+            exec_result = container.exec_run(exec_cmd, detach=detach)
+            if detach:
+                return "started (running in background)"
             return exec_result.output.decode("utf-8", errors="replace").strip()
         return f"unsupported docker subcommand: {sub}"
     except Exception as e:
@@ -272,7 +285,18 @@ async def palworld_post(path: str, body: dict = None):
         )
         if resp.status_code != 200:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
-        return resp.json()
+        # ponytail: Palworld's action endpoints (/save, /announce, /shutdown,
+        # /stop, /kick, /ban, /unban) return 200 with an EMPTY text/plain body
+        # on success. resp.json() on an empty body raised JSONDecodeError, which
+        # surfaced to the UI as a 500 "Internal Server Error" even though the
+        # action succeeded (e.g. Save World genuinely saved). Tolerate a
+        # non-JSON/empty 200 and report success.
+        if not resp.text.strip():
+            return {"status": "ok"}
+        try:
+            return resp.json()
+        except ValueError:
+            return {"status": "ok", "detail": resp.text[:500]}
 
 
 # ---------------------------------------------------------------------------
@@ -564,8 +588,11 @@ async def backup_status(_user: str = Depends(require_auth)):
 @app.post("/api/backup/trigger")
 async def trigger_backup(_user: str = Depends(require_auth)):
     """Trigger a manual backup via docker exec in the backup container."""
-    # The offen/docker-volume-backup container runs backup with 'backup' entrypoint
-    out = _run_docker(["exec", "ppsa-backup", "backup"])
+    # The offen/docker-volume-backup container runs backup with 'backup' entrypoint.
+    # Detached: offen's `backup` does a foreground multi-GB tar+gzip; running it
+    # synchronously froze the uvicorn event loop (whole WebUI hung until it
+    # finished). Fire it in the background and return immediately.
+    out = _run_docker(["exec", "ppsa-backup", "--detach", "backup"])
     return {"status": "triggered", "detail": out[:500]}
 
 
