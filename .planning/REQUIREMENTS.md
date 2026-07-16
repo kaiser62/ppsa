@@ -29,6 +29,16 @@ Requirements for the current milestone. Each maps to a roadmap phase.
 
 - [ ] **TEST-04**: The scripted smoke test asserts the three v1.3.0-nb.12 fixes (server-action 200, non-blocking backup trigger, backup archive actually written) so a regression fails the run automatically
 
+### WebUI Backup & Restore
+
+> Appliance WebUI feature (separate concern from the testing milestone above). Added as Phase 3.
+
+- [ ] **BKP-01**: From the WebUI, a "save-file backup" action creates a timestamped archive of ONLY the Palworld SaveGames data (not a full volume/offen backup) without stopping the palworld container, and the archive lands in the backups directory
+- [ ] **BKP-02**: The WebUI lists save-file archives and can restore from one already present on the box (selected from the list)
+- [ ] **BKP-03**: The WebUI can restore from a save archive uploaded by the user from their own computer
+- [ ] **BKP-04**: Restore is safe-by-default: it requires an explicit user confirmation, stops palworld, backs up the current SaveGames first, extracts the chosen archive over SaveGames, then restarts palworld
+- [ ] **BKP-05**: Restore validates the archive is a well-formed Palworld save archive BEFORE touching the live save, and reports a clear success/failure result to the user ("restore from webui correctly")
+
 ## v2 Requirements
 
 Deferred — acknowledged but not in this milestone.
@@ -58,12 +68,17 @@ Deferred — acknowledged but not in this milestone.
 | TEST-02 | Phase 2 | Pending |
 | TEST-03 | Phase 2 | Pending |
 | TEST-04 | Phase 2 | Pending |
+| BKP-01 | Phase 3 | Pending |
+| BKP-02 | Phase 3 | Pending |
+| BKP-03 | Phase 3 | Pending |
+| BKP-04 | Phase 3 | Pending |
+| BKP-05 | Phase 3 | Pending |
 
 **Coverage:**
-- v1 requirements: 7 total
-- Mapped to phases: 7
+- v1 requirements: 12 total
+- Mapped to phases: 12
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-07-16*
-*Last updated: 2026-07-16 after ROADMAP.md created (Phase 1: Overlay Access — NET-01..03; Phase 2: Scripted Smoke Test — TEST-01..04)*
+*Last updated: 2026-07-16 after adding Phase 3 (WebUI Save-File Backup & Restore — BKP-01..05)*

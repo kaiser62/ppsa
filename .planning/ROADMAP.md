@@ -27,6 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Overlay Access** - A fresh test VM is reachable over SSH at a persistent, reserved NetBird overlay IP, with the enrollment procedure documented for repeat use
 - [ ] **Phase 2: Scripted Smoke Test** - One host-side script drives the full install checklist over that SSH connection, asserts the nb.12 regression fixes, and reports a single pass/fail summary with raw output kept out of the main context
+- [ ] **Phase 3: WebUI Save-File Backup & Restore** - The WebUI gains a lightweight save-file backup action and a safe restore flow (from an on-box archive or an uploaded file) that correctly replaces the live Palworld save
 
 ## Phase Details
 
@@ -54,12 +55,26 @@ Plans:
   4. The script explicitly asserts the three v1.3.0-nb.12 fixes (server-action endpoints return 200 not 500, backup trigger returns immediately without freezing the WebUI, a backup archive file actually appears in the backup directory after a run) and fails the run if any regress
 **Plans**: TBD
 
+### Phase 3: WebUI Save-File Backup & Restore
+**Goal**: A user can, from the WebUI, take a fast save-file-only backup of their world and later restore it correctly — from either an on-box archive or a file they upload — without losing their current save if something goes wrong.
+**Depends on**: Nothing (independent appliance-feature phase; not gated on Phases 1–2)
+**Requirements**: BKP-01, BKP-02, BKP-03, BKP-04, BKP-05
+**Success Criteria** (what must be TRUE):
+  1. A WebUI "save-file backup" action produces a timestamped archive containing only the Palworld SaveGames data, without stopping the palworld container, and the archive appears in the WebUI backup list
+  2. From the WebUI the user can restore from an archive already on the box (chosen from the list) OR from a `.tar.gz` archive they upload from their computer
+  3. Restore requires an explicit confirmation, and before overwriting it stops palworld, snapshots the current SaveGames to a safety archive, extracts the chosen archive over SaveGames, then restarts palworld
+  4. Restore validates the archive is a well-formed Palworld save archive before touching the live save, and reports an unambiguous success or failure to the user (no silent partial restore)
+**Plans**: TBD
+
+> **Scope note:** Phase 3 is an appliance WebUI feature, distinct from the Phase 1–2 build-verification milestone. Kept in this roadmap for tracking; may be split into its own milestone later.
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2
+Phases 1 → 2 are the testing milestone (2 depends on 1). Phase 3 is independent and can be planned/executed in parallel with either.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Overlay Access | 0/TBD | Not started | - |
 | 2. Scripted Smoke Test | 0/TBD | Not started | - |
+| 3. WebUI Save-File Backup & Restore | 0/TBD | Not started | - |
