@@ -38,7 +38,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. SSH from the designated NetBird dev peer to a freshly installed test VM's overlay IP succeeds with no console-injected ufw/LAN exception and no manual firewall edit
   2. The test VM enrolls at the same reserved/persistent NetBird overlay IP across rebuilds and reboots, so the address doesn't need to be rediscovered per build
   3. A written procedure (in `docs/` or `.planning/`) lets a future session reproduce the test-peer enrollment and reserved-IP setup from scratch, without re-deriving it from first principles
-**Plans**: TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 01-01-PLAN.md — Isolated NetBird test-peer identity, stable hostname/DNS-label mechanism, live-verified SSH-over-NetBird access, and updated docs/skill
 
 ### Phase 2: Scripted Smoke Test
 **Goal**: Verifying a build is a single host-side script invocation over SSH that returns pass/fail, replacing the interactive VBox scancode/screenshot/log-dump loop, while still catching the specific regressions that have bitten this appliance before.
