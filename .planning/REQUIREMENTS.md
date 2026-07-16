@@ -21,13 +21,13 @@ Requirements for the current milestone. Each maps to a roadmap phase.
 
 ### Smoke Test
 
-- [ ] **TEST-01**: The full install smoke checklist (stack up, containers healthy, firewall chain present, NetBird connected, WG dormant, WebUI reachable, backup end-to-end) runs over SSH text output — no screenshots, no scancode typing
-- [ ] **TEST-02**: The smoke checklist runs as one host-side script that returns a single pass/fail summary rather than dozens of interactive tool calls
-- [ ] **TEST-03**: Raw test output (container logs, verbose command output) is captured to files or a subagent and only a distilled pass/fail summary reaches the main working context
+- [x] **TEST-01**: The full install smoke checklist (stack up, containers healthy, firewall chain present, NetBird connected, WG dormant, WebUI reachable, backup end-to-end) runs over SSH text output — no screenshots, no scancode typing
+- [x] **TEST-02**: The smoke checklist runs as one host-side script that returns a single pass/fail summary rather than dozens of interactive tool calls
+- [x] **TEST-03**: Raw test output (container logs, verbose command output) is captured to files or a subagent and only a distilled pass/fail summary reaches the main working context
 
 ### Regression Guard
 
-- [ ] **TEST-04**: The scripted smoke test asserts the three v1.3.0-nb.12 fixes (server-action 200, non-blocking backup trigger, backup archive actually written) so a regression fails the run automatically
+- [x] **TEST-04**: The scripted smoke test asserts the three v1.3.0-nb.12 fixes (server-action 200, non-blocking backup trigger, backup archive actually written) so a regression fails the run automatically
 
 ### WebUI Backup & Restore
 
@@ -64,10 +64,10 @@ Deferred — acknowledged but not in this milestone.
 | NET-01 | Phase 1 | Pending |
 | NET-02 | Phase 1 | Pending |
 | NET-03 | Phase 1 | Pending |
-| TEST-01 | Phase 2 | Pending |
-| TEST-02 | Phase 2 | Pending |
-| TEST-03 | Phase 2 | Pending |
-| TEST-04 | Phase 2 | Pending |
+| TEST-01 | Phase 2 | Complete |
+| TEST-02 | Phase 2 | Complete |
+| TEST-03 | Phase 2 | Complete |
+| TEST-04 | Phase 2 | Complete |
 | BKP-01 | Phase 3 | Pending |
 | BKP-02 | Phase 3 | Pending |
 | BKP-03 | Phase 3 | Pending |
@@ -75,6 +75,7 @@ Deferred — acknowledged but not in this milestone.
 | BKP-05 | Phase 3 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 12 total
 - Mapped to phases: 12
 - Unmapped: 0 ✓
