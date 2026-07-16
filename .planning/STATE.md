@@ -1,12 +1,19 @@
 ---
-gsd_state_version: '1.0'
-status: planning
+gsd_state_version: 1.0
+milestone: v1.3.0
+milestone_name: milestone
+current_phase: 01
+current_phase_name: overlay-access
+status: executing
+stopped_at: ROADMAP.md and STATE.md created; REQUIREMENTS.md traceability confirmed
+last_updated: "2026-07-16T13:28:34.030Z"
+last_activity: 2026-07-16
+last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 2
   completed_phases: 0
-  total_plans: 0
+  total_plans: 3
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State
@@ -16,20 +23,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-16)
 
 **Core value:** A user can boot the appliance, and their friends can reach a working Palworld server over the private overlay network — every build must preserve that end-to-end path.
-**Current focus:** Phase 1 — Overlay Access (persistent NetBird SSH reachability for the test VM)
+**Current focus:** Phase 01 — overlay-access
 
 ## Current Position
 
-Phase: 1 of 2 (Overlay Access)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-07-16 — Roadmap created from REQUIREMENTS.md (7 v1 requirements, coarse granularity, 2 phases)
+### Phase 01 (overlay-access) — EXECUTING
+Plan: 1 of 1
+Status: PAUSED at CP1 (awaiting ppsa-test-vm NetBird setup key)
+Last activity: 2026-07-16 — Phase 01 execution started
 
-Progress: [░░░░░░░░░░] 0%
+### Phase 03 (webui-backup-restore) — PLANNING
+Plans: 2 of 2 complete (03-01-PLAN.md, 03-02-PLAN.md)
+Status: Plans finalized, verified, ready for execution
+Last activity: 2026-07-17 — Plans pass checker: 0 blockers, 1 warning (fixed)
+
+Progress: [▒▒▒▒▒▒▒▒▒▒] 0%
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: - min
 - Total execution time: 0 hours
@@ -41,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: -
 - Trend: -
 
@@ -55,6 +69,7 @@ Recent decisions affecting current work:
 
 - Milestone scope: Test fresh installs over NetBird SSH instead of VBox scancodes/screenshots (pending validation)
 - Milestone scope: Reserve a persistent NetBird IP for the test peer to avoid per-boot IP churn (pending validation)
+- Phase 3 scope: Save-file-only backup (no palworld stop), restore from both on-box + upload, stop→snapshot→extract→restart safety sequence, validate before destructive step (locked in 03-CONTEXT.md D-01 through D-04)
 
 ### Pending Todos
 

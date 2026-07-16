@@ -64,7 +64,11 @@ Plans:
   2. From the WebUI the user can restore from an archive already on the box (chosen from the list) OR from a `.tar.gz` archive they upload from their computer
   3. Restore requires an explicit confirmation, and before overwriting it stops palworld, snapshots the current SaveGames to a safety archive, extracts the chosen archive over SaveGames, then restarts palworld
   4. Restore validates the archive is a well-formed Palworld save archive before touching the live save, and reports an unambiguous success or failure to the user (no silent partial restore)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Backend: save-file backup endpoint, restore API (on-box + upload), archive validation, _run_docker stop/start
+- [ ] 03-02-PLAN.md — Frontend: Save-File Backup button, restore actions + confirm on archive rows, upload-tar.gz card, JS handlers
 
 > **Scope note:** Phase 3 is an appliance WebUI feature, distinct from the Phase 1–2 build-verification milestone. Kept in this roadmap for tracking; may be split into its own milestone later.
 

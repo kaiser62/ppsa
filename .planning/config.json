@@ -11,6 +11,7 @@
     "research": false,
     "plan_check": true,
     "verifier": true,
-    "nyquist_validation": false
+    "nyquist_validation": false,
+    "_auto_chain_active": false
   }
 }
