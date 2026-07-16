@@ -1,0 +1,16 @@
+{
+  "graphify": {
+    "enabled": true
+  },
+  "mode": "yolo",
+  "granularity": "coarse",
+  "parallelization": true,
+  "commit_docs": true,
+  "model_profile": "budget",
+  "workflow": {
+    "research": false,
+    "plan_check": true,
+    "verifier": true,
+    "nyquist_validation": false
+  }
+}
