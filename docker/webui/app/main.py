@@ -748,7 +748,7 @@ def _validate_save_archive(path: Path) -> tuple[bool, str]:
         # T-03-01: reject path traversal
         if ".." in name or name.startswith("/"):
             return False, "path traversal detected"
-        if name == "SaveGames/":
+        if name == "SaveGames/" or name == "SaveGames":
             has_savegames_dir = True
         elif name.endswith(".sav"):
             has_sav_file = True
