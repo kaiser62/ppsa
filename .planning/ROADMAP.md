@@ -53,7 +53,10 @@ Plans:
   2. A single invocation of that script produces one pass/fail summary, not a sequence of separate interactive tool calls the operator has to reason about individually
   3. Raw command/container output from the run is written to a file (or handled by a subagent) rather than appearing in the main working context — only the distilled summary does
   4. The script explicitly asserts the three v1.3.0-nb.12 fixes (server-action endpoints return 200 not 500, backup trigger returns immediately without freezing the WebUI, a backup archive file actually appears in the backup directory after a run) and fails the run if any regress
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 02-01-PLAN.md — Create host-side smoke test script + update installer-test SKILL.md to chain Phase 1 SSH path into smoke test workflow
 
 ### Phase 3: WebUI Save-File Backup & Restore
 **Goal**: A user can, from the WebUI, take a fast save-file-only backup of their world and later restore it correctly — from either an on-box archive or a file they upload — without losing their current save if something goes wrong.
@@ -79,6 +82,6 @@ Phases 1 → 2 are the testing milestone (2 depends on 1). Phase 3 is independen
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Overlay Access | 0/TBD | Not started | - |
-| 2. Scripted Smoke Test | 0/TBD | Not started | - |
-| 3. WebUI Save-File Backup & Restore | 0/TBD | Not started | - |
+| 1. Overlay Access | 1/1 | Not started (partial) | - |
+| 2. Scripted Smoke Test | 1/1 | Planned | 2026-07-17 |
+| 3. WebUI Save-File Backup & Restore | 2/2 | Complete | 2026-07-16 |
