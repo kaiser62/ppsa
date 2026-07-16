@@ -66,4 +66,4 @@ Deferred — acknowledged but not in this milestone.
 
 ---
 *Requirements defined: 2026-07-16*
-*Last updated: 2026-07-16 after initial definition*
+*Last updated: 2026-07-16 after ROADMAP.md created (Phase 1: Overlay Access — NET-01..03; Phase 2: Scripted Smoke Test — TEST-01..04)*
