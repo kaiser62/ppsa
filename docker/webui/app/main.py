@@ -50,6 +50,8 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 ENV_FILE = Path("/opt/ppsa/.env")
 BACKUP_DIR = Path("/backups")  # mounted from ../backups by compose
+PALWORLD_DATA = Path("/palworld-data")  # mounted from the palworld_data volume by compose
+SAVEGAMES_DIR = PALWORLD_DATA / "Pal/Saved/SaveGames"
 
 # --- Bootstrap ---
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -714,9 +716,7 @@ async def restore_upload_backup(file: UploadFile, _user: str = Depends(require_a
 # ---------------------------------------------------------------------------
 # Mod management (protected) — .pak-only, dropped into the palworld_data volume
 # ---------------------------------------------------------------------------
-PALWORLD_DATA = Path("/palworld-data")  # mounted from the palworld_data volume by compose
 MODS_DIR = PALWORLD_DATA / "Pal/Content/Paks/~mods"
-SAVEGAMES_DIR = PALWORLD_DATA / "Pal/Saved/SaveGames"
 
 
 def _validate_save_archive(path: Path) -> tuple[bool, str]:
