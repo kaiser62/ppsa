@@ -13,6 +13,7 @@ import shlex
 import re
 import asyncio
 import subprocess
+import tarfile
 import zipfile
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -214,6 +215,12 @@ def _run_docker(cmd: list[str]) -> str:
         if sub == "restart":
             _docker.containers.get(cmd[1]).restart()
             return f"restarted {cmd[1]}"
+        if sub == "stop":
+            _docker.containers.get(cmd[1]).stop(timeout=30)
+            return f"stopped {cmd[1]}"
+        if sub == "start":
+            _docker.containers.get(cmd[1]).start()
+            return f"started {cmd[1]}"
         if sub == "exec":
             container = _docker.containers.get(cmd[1])
             exec_cmd = cmd[2:]
@@ -596,11 +603,162 @@ async def trigger_backup(_user: str = Depends(require_auth)):
     return {"status": "triggered", "detail": out[:500]}
 
 
+@app.post("/api/backup/save-file")
+async def save_file_backup(_user: str = Depends(require_auth)):
+    """Create a timestamped tar.gz of the live SaveGames directory.
+
+    No palworld stop needed — snapshots the files as they are. Palworld
+    auto-saves the world regularly; the save file is always in a consistent
+    state for reading even if a write is concurrent (Palworld uses atomic
+    rename-on-write internally). A stop-free snapshot > corrupted-archive risk.
+    """
+    if not SAVEGAMES_DIR.exists():
+        raise HTTPException(status_code=404, detail="SaveGames directory not found on volume")
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    dest = BACKUP_DIR / f"savefile-{ts}.tar.gz"
+    try:
+        with tarfile.open(dest, "w:gz") as tar:
+            tar.add(SAVEGAMES_DIR, arcname=SAVEGAMES_DIR.name)
+    except (tarfile.TarError, OSError) as e:
+        # Clean up partial archive
+        if dest.exists():
+            dest.unlink()
+        raise HTTPException(status_code=500, detail=f"archive creation failed: {e}")
+    stat = dest.stat()
+    return {
+        "name": dest.name,
+        "size": stat.st_size,
+        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+    }
+
+
+SAVE_RESTORE_PARENT = SAVEGAMES_DIR.parent  # PALWORLD_DATA / "Pal/Saved"
+
+
+def _do_restore(archive_path: Path) -> dict:
+    """Stop palworld, extract save archive, restart palworld.
+
+    T-03-03 (destructive replace): verified archive is valid before stop.
+    T-03-05 (temp file cleanup): caller must clean up temp files.
+    """
+    valid, reason = _validate_save_archive(archive_path)
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"invalid archive: {reason}")
+
+    # Stop palworld so no write contention during extract
+    stop_result = _run_docker(["stop", "ppsa-palworld"])
+    try:
+        with tarfile.open(archive_path, "r:gz") as tar:
+            # T-03-01: validate again during extraction (defense in depth)
+            for m in tar.getmembers():
+                if ".." in m.name or m.name.startswith("/"):
+                    raise HTTPException(status_code=400, detail=f"path traversal in archive: {m.name}")
+            tar.extractall(path=SAVE_RESTORE_PARENT)
+    except (tarfile.TarError, OSError) as e:
+        # Restart palworld even on failure so server isn't left down
+        _run_docker(["start", "ppsa-palworld"])
+        raise HTTPException(status_code=500, detail=f"extract failed: {e}")
+
+    start_result = _run_docker(["start", "ppsa-palworld"])
+    stat = archive_path.stat()
+    return {
+        "status": "restored",
+        "archive": archive_path.name,
+        "size": stat.st_size,
+        "stop": stop_result,
+        "start": start_result,
+    }
+
+
+@app.post("/api/backup/restore")
+async def restore_backup(filename: str, _user: str = Depends(require_auth)):
+    """Restore a save-file archive by filename from the backup dir.
+
+    T-03-02 (filename traversal): strip to basename, resolve under BACKUP_DIR.
+    """
+    safe_name = Path(filename).name
+    archive_path = BACKUP_DIR / safe_name
+    if not archive_path.exists():
+        raise HTTPException(status_code=404, detail=f"archive not found: {safe_name}")
+    return _do_restore(archive_path)
+
+
+@app.post("/api/backup/restore-upload")
+async def restore_upload_backup(file: UploadFile, _user: str = Depends(require_auth)):
+    """Restore from an uploaded save-file archive.
+
+    Validates before any destructive action, then delegates to _do_restore.
+    Temp file cleaned up after restore (T-03-05).
+    """
+    if not file.filename or not file.filename.endswith(".tar.gz"):
+        raise HTTPException(status_code=400, detail="upload must be a .tar.gz file")
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = BACKUP_DIR / f"_upload_{Path(file.filename).name}"
+    try:
+        content = await file.read()
+        tmp.write_bytes(content)
+        result = _do_restore(tmp)
+        result["upload"] = file.filename
+        return result
+    except HTTPException:
+        # Re-raise HTTP exceptions from _do_restore
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"upload restore failed: {e}")
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
 # ---------------------------------------------------------------------------
 # Mod management (protected) — .pak-only, dropped into the palworld_data volume
 # ---------------------------------------------------------------------------
 PALWORLD_DATA = Path("/palworld-data")  # mounted from the palworld_data volume by compose
 MODS_DIR = PALWORLD_DATA / "Pal/Content/Paks/~mods"
+SAVEGAMES_DIR = PALWORLD_DATA / "Pal/Saved/SaveGames"
+
+
+def _validate_save_archive(path: Path) -> tuple[bool, str]:
+    """Validate a tar.gz archive contains a valid Palworld save tree.
+
+    Checks:
+    - Archive is readable gzip+tar
+    - Contains a SaveGames/ directory at root
+    - Contains at least one .sav file (Level.sav or player data)
+    - No path traversal (../ or absolute paths)
+
+    Returns (True, "") on success or (False, reason) on failure.
+    """
+    if not path.exists():
+        return False, "file not found"
+    try:
+        with tarfile.open(path, "r:gz") as tar:
+            members = tar.getmembers()
+    except (tarfile.TarError, OSError) as e:
+        return False, f"corrupt archive: {e}"
+
+    if not members:
+        return False, "empty archive"
+
+    has_savegames_dir = False
+    has_sav_file = False
+    for m in members:
+        name = m.name
+        # T-03-01: reject path traversal
+        if ".." in name or name.startswith("/"):
+            return False, "path traversal detected"
+        if name == "SaveGames/":
+            has_savegames_dir = True
+        elif name.endswith(".sav"):
+            has_sav_file = True
+
+    if not has_savegames_dir:
+        return False, "archive missing SaveGames/ directory"
+    if not has_sav_file:
+        return False, "archive contains no .sav files"
+    return True, ""
+
 
 @app.get("/api/mods")
 async def list_mods(_user: str = Depends(require_auth)):

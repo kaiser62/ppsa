@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.3.0
 milestone_name: milestone
-current_phase: 01
-current_phase_name: overlay-access
+current_phase: 03
+current_phase_name: webui-backup-restore
 status: executing
-stopped_at: ROADMAP.md and STATE.md created; REQUIREMENTS.md traceability confirmed
-last_updated: "2026-07-16T13:28:34.030Z"
-last_activity: 2026-07-16
-last_activity_desc: Phase 01 execution started
+stopped_at: Phase 03 backend+frontend implementation complete; summary written
+last_updated: "2026-07-17T01:15:00.000Z"
+last_activity: 2026-07-17
+last_activity_desc: Phase 03 execution started
 progress:
-  total_phases: 2
-  completed_phases: 0
-  total_plans: 3
-  completed_plans: 0
+  total_phases: 3
+  completed_phases: 1
+  total_plans: 5
+  completed_plans: 2
 ---
 
 # Project State
@@ -27,17 +27,17 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 
 ## Current Position
 
-### Phase 01 (overlay-access) — EXECUTING
+### Phase 01 (overlay-access) — COMPLETED
 Plan: 1 of 1
-Status: PAUSED at CP1 (awaiting ppsa-test-vm NetBird setup key)
-Last activity: 2026-07-16 — Phase 01 execution started
+Status: CP1 verified, CP2 signed off by user — NetBird static IP pinning, SSH-over-NetBird, first-boot, Docker stack, firewall all confirmed.
+Last activity: 2026-07-17
 
-### Phase 03 (webui-backup-restore) — PLANNING
+### Phase 03 (webui-backup-restore) — EXECUTING
 Plans: 2 of 2 complete (03-01-PLAN.md, 03-02-PLAN.md)
-Status: Plans finalized, verified, ready for execution
-Last activity: 2026-07-17 — Plans pass checker: 0 blockers, 1 warning (fixed)
+Status: Implementation complete — backend endpoints (save-file, restore, restore-upload) + frontend (UI buttons, actions column, upload card, JS handlers). Summary written.
+Last activity: 2026-07-17 — Implementation done
 
-Progress: [▒▒▒▒▒▒▒▒▒▒] 0%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -77,7 +77,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- Reserved/persistent NetBird IP mechanism (dashboard static IP vs. dedicated setup key) is unresearched — flagged in PROJECT.md as "needs research at plan time"; Phase 1 planning should resolve this before implementation.
+- None — resolved: NetBird static IP pinning via PUT /api/peers/{id} (100.70.169.201), Phase 3 implemented.
 
 ## Deferred Items
 

@@ -314,13 +314,24 @@
         <div class="btn-group">
           <button onclick="saveBackupConfig()">Save Backup Config</button>
           <button class="outline" onclick="triggerBackup()">Backup Now</button>
+          <button class="outline" onclick="saveFileBackup()">Save-File Backup</button>
         </div>
       </div>
       <div class="section">
         <h2>Backup Archives</h2>
-        <table><thead><tr><th>File</th><th>Size</th><th>Date</th></tr></thead>
-          <tbody id="backup-files-body"><tr><td colspan="3">Loading...</td></tr></tbody>
+        <table><thead><tr><th>File</th><th>Size</th><th>Date</th><th>Actions</th></tr></thead>
+          <tbody id="backup-files-body"><tr><td colspan="4">Loading...</td></tr></tbody>
         </table>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <h3>Restore from File</h3>
+        <p class="muted">Upload a save-file archive (<code>.tar.gz</code>) to restore. The Palworld server will be stopped during restoration.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <input type="file" id="restore-file" accept=".tar.gz">
+          </div>
+          <button class="danger" onclick="restoreUploadBackup()">Restore from Upload</button>
+        </div>
       </div>
     </div>
 
@@ -845,10 +856,10 @@ async function refreshBackup() {
     const tbody = document.getElementById('backup-files-body');
     if (status.files?.length) {
       tbody.innerHTML = status.files.map(f =>
-        `<tr><td>${e(f.name)}</td><td>${(f.size/1048576).toFixed(1)} MB</td><td>${new Date(f.modified).toLocaleString()}</td></tr>`
+        `<tr><td>${e(f.name)}</td><td>${(f.size/1048576).toFixed(1)} MB</td><td>${new Date(f.modified).toLocaleString()}</td><td><button class="small danger" onclick="restoreBackup('${e(f.name)}')">Restore</button></td></tr>`
       ).join('');
     } else {
-      tbody.innerHTML = '<tr><td colspan="3">No backups yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4">No backups yet</td></tr>';
     }
   } catch(e) { console.error('Backup:', e); }
 }
@@ -873,6 +884,55 @@ async function triggerBackup() {
   try {
     const data = await api('/api/backup/trigger', { method: 'POST' });
     showAlert('Backup triggered: ' + data.detail.slice(0,200), 'success', 'backup-alert');
+    setTimeout(refreshBackup, 2000);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'backup-alert');
+  }
+}
+
+async function saveFileBackup() {
+  showAlert('Creating save-file backup...', 'info', 'backup-alert');
+  try {
+    const data = await api('/api/backup/save-file', { method: 'POST' });
+    showAlert('Save-file backup created: ' + data.name, 'success', 'backup-alert');
+    setTimeout(refreshBackup, 500);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'backup-alert');
+  }
+}
+
+async function restoreBackup(filename) {
+  if (!await confirmAction('Restore Save', 'Restore ' + filename + '? This will STOP the Palworld server, replace Saved games, then restart it. This cannot be undone.')) return;
+  showAlert('Restoring ' + filename + '...', 'info', 'backup-alert');
+  try {
+    const data = await api('/api/backup/restore?filename=' + encodeURIComponent(filename), { method: 'POST' });
+    showAlert('Restore complete from ' + data.archive + '. Palworld restarted.', 'success', 'backup-alert');
+    setTimeout(refreshBackup, 2000);
+  } catch(e) {
+    showAlert('Error: ' + e.message, 'error', 'backup-alert');
+  }
+}
+
+async function restoreUploadBackup() {
+  const fileInput = document.getElementById('restore-file');
+  if (!fileInput.files || !fileInput.files[0]) { showAlert('Select a .tar.gz file first', 'error', 'backup-alert'); return; }
+  const file = fileInput.files[0];
+  if (!file.name.endsWith('.tar.gz')) { showAlert('File must be a .tar.gz archive', 'error', 'backup-alert'); return; }
+  if (!await confirmAction('Restore from Upload', 'Restore from ' + file.name + '? This will STOP the Palworld server, replace Saved games, then restart it.')) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  showAlert('Uploading and restoring...', 'info', 'backup-alert');
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/backup/restore-upload', {
+      method: 'POST',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+      body: formData,
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail || res.statusText); }
+    const data = await res.json();
+    showAlert('Upload restore complete from ' + data.archive + '. Palworld restarted.', 'success', 'backup-alert');
+    fileInput.value = '';
     setTimeout(refreshBackup, 2000);
   } catch(e) {
     showAlert('Error: ' + e.message, 'error', 'backup-alert');

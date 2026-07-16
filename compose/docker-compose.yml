@@ -99,7 +99,7 @@ services:
       - webui_data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/wireguard:/etc/wireguard:rw
-      - ../backups:/backups:ro
+      - ../backups:/backups:rw
       - ../.env:/opt/ppsa/.env:rw  # ponytail: webui reads AND writes this for /api/env (Config/Backup tabs)
       - palworld_data:/palworld-data  # ponytail: rw, so the Mods tab can drop .pak files into Pal/Content/Paks/~mods
       - /:/host:ro  # ponytail: webui needs access to host's nmcli/wpa_supplicant for Wi-Fi scan
