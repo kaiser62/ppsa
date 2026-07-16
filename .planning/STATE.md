@@ -4,14 +4,14 @@ milestone: v1.3.0
 milestone_name: milestone
 current_phase: 03
 current_phase_name: webui-backup-restore
-status: executing
-stopped_at: Phase 03 backend+frontend implementation complete; summary written
-last_updated: "2026-07-17T01:15:00.000Z"
+status: completed
+stopped_at: All defined phases executed; Phase 02 is a roadmap gap
+last_updated: "2026-07-17T03:10:00.000Z"
 last_activity: 2026-07-17
-last_activity_desc: Phase 03 execution started
+last_activity_desc: Phase 03 completed — both plans implemented, summarized, smoke-tested
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
   completed_plans: 2
   summaries_written: 2
@@ -24,7 +24,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-16)
 
 **Core value:** A user can boot the appliance, and their friends can reach a working Palworld server over the private overlay network — every build must preserve that end-to-end path.
-**Current focus:** Phase 01 — overlay-access
+**Current focus:** Milestone v1.3.0 — 2 of 3 phases complete; Phase 02 undefined (roadmap gap)
 
 ## Current Position
 
@@ -33,12 +33,12 @@ Plan: 1 of 1 — SUMMARY.md written
 Status: Task 1 (test-peer artifacts, doc) completed and committed. Task 2 (live re-enrollment against a real VM, SKILL.md update) not executed. Broader NetBird-mainline promotion work done separately.
 Last activity: 2026-07-17 — SUMMARY.md created
 
-### Phase 03 (webui-backup-restore) — EXECUTING
-Plans: 2 of 2 written; 1 of 2 summaries written
-Status: Backend save-file/restore/restore-upload endpoints + frontend UI implemented. 03-02-SUMMARY.md pending.
-Last activity: 2026-07-17 — Implementation done, summary pending
+### Phase 03 (webui-backup-restore) — COMPLETED
+Plans: 2 of 2 written; 2 of 2 summaries written (combined in 03-01-SUMMARY.md per plan output instruction)
+Status: Backend save-file/restore/restore-upload endpoints + frontend UI (Save-File Backup button, restore actions, upload card with confirmAction modals) implemented and committed. Full smoke test verified in VM (25/25 checks passed).
+Last activity: 2026-07-17 — Implementation done, summary covers both plans
 
-Progress: [███░░░░░░░] 33%
+Progress: [██████░░░░] 66%
 
 ## Performance Metrics
 
