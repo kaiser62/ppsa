@@ -673,12 +673,20 @@ def _do_restore(archive_path: Path) -> dict:
     }
 
 
+@app.get("/api/backup/list")
+async def backup_list(_user: str = Depends(require_auth)):
+    """List backup archives (convenience alias for status)."""
+    return await backup_status(_user)
+
+
 @app.post("/api/backup/restore")
 async def restore_backup(filename: str, _user: str = Depends(require_auth)):
     """Restore a save-file archive by filename from the backup dir.
 
     T-03-02 (filename traversal): strip to basename, resolve under BACKUP_DIR.
     """
+    if not filename or not filename.strip():
+        raise HTTPException(status_code=400, detail="filename parameter is required")
     safe_name = Path(filename).name
     archive_path = BACKUP_DIR / safe_name
     if not archive_path.exists():

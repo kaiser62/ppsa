@@ -368,13 +368,17 @@ Shipped `vboxguest.ko` may not match the host VirtualBox version. Symptoms: kern
 ## 15. Maintenance
 
 - **Update image:** download a new release, write to a fresh USB / replace VDI, boot. First-boot installer detects existing data and skips destructive steps. Force clean: `sudo rm /opt/ppsa/.installed && sudo docker volume rm compose_palworld_data compose_webui_data compose_wgdashboard_data && sudo reboot`.
-- **Backup:** `ppsa-backup` runs `offen/docker-volume-backup` per `BACKUP_SCHEDULE` (default `0 3 * * *`) with `BACKUP_RETENTION_DAYS=7`. Backups land at `/mnt/backups`.
-- **Restore:** stop the stack, restore the tarball, restart:
+- **Volume backup (full stack):** `ppsa-backup` runs `offen/docker-volume-backup` per `BACKUP_SCHEDULE` (default `0 3 * * *`) with `BACKUP_RETENTION_DAYS=7`. Backups land at `/mnt/backups`. Restore via CLI:
   ```bash
   sudo docker run --rm -v compose_palworld_data:/volume -v /mnt/backups:/backup:ro \
     alpine sh -c "rm -rf /volume/* && tar xzf /backup/<file>.tar.gz -C /volume"
   sudo docker compose -f compose/docker-compose.yml up -d
   ```
+- **Save-file backup (WebUI):** Backup tab → **Save-File Backup** creates a timestamped `.tar.gz` of the live SaveGames directory (no server stop needed). Archives appear in the backup list and land in `/backups/` alongside volume backups.
+- **Save-file restore (WebUI):** Two restore methods:
+  - **From archive list:** click **Restore** on any save-file archive row. WebUI stops the palworld container, extracts the archive to replace SaveGames, then restarts.
+  - **From upload:** use the **Restore from File** card to upload a `.tar.gz` file, then **Restore from Upload**. Same stop→extract→start safety sequence.
+  - Both paths validate the archive before stopping the server (checks for SaveGames/ dir and .sav files, rejects path traversal).
 - **Rotate wg-easy admin password:** on the wg-easy host, `docker exec -it wg-easy-ppsa sqlite3 /etc/wireguard/wg-easy.db` then `UPDATE users SET password = '<new argon2id hash>' WHERE id = 1;`. Or reset (loses peers): `docker compose down && sudo rm -rf ./config/wg-easy.db`, set `INIT_PASSWORD=newpass` in `.env`, `docker compose up -d`.
 - **Reset WebUI admin password:** WebUI → **Settings**, or edit `/var/lib/docker/volumes/compose_webui_data/_data/auth.json` (FastAPI passlib bcrypt) and restart the webui container.
 - **Housekeeping:** `sudo docker image prune -a`; rotate WireGuard keys in wg-easy.

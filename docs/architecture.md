@@ -69,7 +69,7 @@ live progress on the console (tty1):
 | `palworld` | `thijsvanloef/palworld-server-docker` | The game server itself |
 | `webui` | built from `docker/webui/` (this repo) | FastAPI app serving both `/api/*` and the static single-page dashboard |
 | `wgdashboard` | `ghcr.io/wgdashboard/wgdashboard` | Peer management UI for the WireGuard tunnel |
-| `backup` | `offen/docker-volume-backup` | Daily (cron'd) tarball of all named volumes |
+| `backup` | `offen/docker-volume-backup` | Daily (cron'd) tarball of all named volumes + WebUI save-file backup/restore (`POST /api/backup/save-file`, `restore`, `restore-upload`) |
 | `watchtower` | `containrrr/watchtower` | Automatic image updates, opt-in per container via labels |
 
 An optional `compose/docker-compose.monitoring.yml` overlay adds Prometheus +
