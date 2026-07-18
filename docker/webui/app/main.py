@@ -51,6 +51,15 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 ENV_FILE = Path("/opt/ppsa/.env")
 BACKUP_DIR = Path("/backups")  # mounted from ../backups by compose
+
+# ponytail: last-known-good game version cache. Palworld prints "Game version is vX"
+# exactly ONCE at startup; on a long-running server that line scrolls out of any
+# bounded `docker logs --tail` window, so the log-parse fallback goes blank and the
+# dashboard would revert to "unavailable" even though the server is healthy. Once we
+# resolve a real version (from REST or the log), we stash it here so it survives log
+# rotation until the process restarts. Module-level mutable holder (not a bare global
+# reassigned inside the handler) so we never need a `global` statement.
+_VERSION_CACHE = {"value": ""}
 PALWORLD_DATA = Path("/palworld-data")  # mounted from the palworld_data volume by compose
 SAVEGAMES_DIR = PALWORLD_DATA / "Pal/Saved/SaveGames"
 
@@ -370,17 +379,27 @@ async def dashboard(_user: str = Depends(require_auth)):
     except Exception:
         container_status = "unknown"
 
-    # 2. Try REST API
-    rest_ok = False
-    try:
-        info = await palworld_get("/info")
-        metrics = await palworld_get("/metrics")
-        players = await palworld_get("/players")
-        rest_ok = True
-    except Exception as e:
-        info = {"error": str(e)}
-        metrics = {}
-        players = []
+    # 2. Try REST API — fetch /info, /metrics, /players CONCURRENTLY.
+    # ponytail: these three were awaited serially at 5s each, so a dead upstream
+    # blocked the handler up to ~15s (three sequential timeouts). asyncio.gather with
+    # return_exceptions=True bounds the total wait to a single timeout, and lets each
+    # call fail independently without aborting the others. We keep palworld_get's
+    # default raise-on-error contract (no default= passed) and treat a returned
+    # Exception instance as that call's failure.
+    info_r, metrics_r, players_r = await asyncio.gather(
+        palworld_get("/info"),
+        palworld_get("/metrics"),
+        palworld_get("/players"),
+        return_exceptions=True,
+    )
+    rest_ok = isinstance(info_r, dict)
+    info = info_r if isinstance(info_r, dict) else {"error": str(info_r)}
+    metrics = metrics_r if isinstance(metrics_r, dict) else {}
+    # players may legitimately be either the {"players":[...]} object shape or a bare
+    # list depending on Palworld version; keep the RAW upstream shape in the response
+    # (the frontend reads data.players?.players?.length), substitute {} on failure.
+    players_ok = not isinstance(players_r, BaseException)
+    players = players_r if players_ok else {}
 
     # 3. Derive server_state
     if container_status == "running" and rest_ok:
@@ -392,26 +411,55 @@ async def dashboard(_user: str = Depends(require_auth)):
     else:
         server_state = "unavailable"
 
-    # 4. Version: try REST first, fall back to container log parse
+    # 4. Version: REST -> log-parse -> last-known-good cache.
+    # ponytail: widen the log tail to 400 (was 50) so a recently-booted server still
+    # has the one-time "Game version is vX" line in-window; then fall back to
+    # _VERSION_CACHE for a long-running server whose startup line has rotated out.
     version = ""
     if rest_ok:
         version = (info or {}).get("version", "") or ""
     if not version:
         try:
-            logs = _run_docker(["logs", "ppsa-palworld", "--tail", "50"])
+            logs = _run_docker(["logs", "ppsa-palworld", "--tail", "400"])
             m = re.search(r"Game version is v(\S+)", logs, re.IGNORECASE)
             if m:
                 version = f"v{m.group(1)}"
         except Exception:
             pass
+    if version:
+        # Write real resolutions (REST or log) back to the last-known-good cache.
+        _VERSION_CACHE["value"] = version
+    elif _VERSION_CACHE["value"]:
+        version = _VERSION_CACHE["value"]
     if not version:
         version = "unavailable"
+
+    # 5. Honest player count + known signal.
+    # ponytail: the Palworld REST /players payload is an OBJECT {"players":[...]}, not a
+    # bare list. The old `len(players) if isinstance(players, list) else 0` was therefore
+    # permanently 0 even with players connected (players is a dict). Extract the real
+    # list defensively, then compute the count from THAT. players_known lets the frontend
+    # tell "server up, genuinely 0 players" apart from "server not up yet, count unknown"
+    # — it must NOT be isinstance(players, list) on the raw {"players":[...]} object,
+    # which would be permanently false.
+    if isinstance(players, dict):
+        player_list = players.get("players", []) or []
+        shape_ok = isinstance(player_list, list)
+    elif isinstance(players, list):
+        player_list = players
+        shape_ok = True
+    else:
+        player_list = []
+        shape_ok = False
+    player_count = len(player_list) if isinstance(player_list, list) else 0
+    players_known = bool(rest_ok and players_ok and shape_ok)
 
     return {
         "server": info,
         "metrics": metrics,
         "players": players,
-        "player_count": len(players) if isinstance(players, list) else 0,
+        "player_count": player_count,
+        "players_known": players_known,
         "server_state": server_state,
         "version": version,
     }
@@ -422,23 +470,41 @@ async def dashboard(_user: str = Depends(require_auth)):
 # ---------------------------------------------------------------------------
 @app.get("/api/system")
 async def system_health(_user: str = Depends(require_auth)):
-    """Host system health: CPU, memory, disk, uptime, container statuses."""
+    """Host system health: CPU, memory, disk, uptime, container statuses.
+
+    ponytail: previously wrapped every probe in ONE try/except and raised
+    HTTPException(500) on any failure, so a single transient probe error (e.g.
+    a slow `df` or a docker-socket hiccup) blanked the whole System view. Now
+    each probe degrades independently: on failure we substitute a safe
+    empty/null value for that section, set a top-level `degraded: true`, and
+    append what failed to `detail` — still returning HTTP 200 with a usable
+    partial payload rather than a bare 500.
+    """
+    failures = []
+
+    # Memory
+    mem = {}
     try:
-        # Memory
-        mem = {}
         for line in _read_file(Path("/proc/meminfo")).splitlines():
             parts = line.split(":")
             if parts[0] in ("MemTotal", "MemAvailable", "MemFree"):
                 val = parts[1].strip().split()[0]
                 mem[parts[0].lower()] = int(val)  # kB
+    except Exception as e:
+        failures.append(f"memory: {e}")
 
-        # CPU load
+    # CPU load
+    load = ["0", "0", "0"]
+    cpu_count = os.cpu_count() or 1
+    try:
         load = _read_file(Path("/proc/loadavg")).split()[:3]
-        cpu_count = os.cpu_count() or 1
+    except Exception as e:
+        failures.append(f"loadavg: {e}")
 
-        # Disk
+    # Disk
+    disk = {}
+    try:
         df = _run(["df", "-B1", "/"])
-        disk = {}
         for line in df.splitlines()[1:2]:
             parts = line.split()
             if len(parts) >= 6:
@@ -448,31 +514,43 @@ async def system_health(_user: str = Depends(require_auth)):
                     "available": int(parts[3]),
                     "percent": parts[4].replace("%", ""),
                 }
+    except Exception as e:
+        failures.append(f"disk: {e}")
 
-        # Uptime
+    # Uptime
+    uptime_secs = None
+    try:
         uptime_secs = round(float(_read_file(Path("/proc/uptime")).split()[0]))
+    except Exception as e:
+        failures.append(f"uptime: {e}")
 
-        # Docker containers
+    # Docker containers
+    containers = []
+    try:
         ps_out = _run_docker(["ps", "--format", "{{.Names}}\t{{.Status}}\t{{.Image}}"])
-        containers = []
         for line in ps_out.splitlines():
             parts = line.split("\t")
             if len(parts) >= 3:
                 containers.append({"name": parts[0], "status": parts[1], "image": parts[2]})
-
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        failures.append(f"docker: {e}")
 
     mem_total_mb = round(mem.get("memtotal", 0) / 1024)
     mem_avail_mb = round(mem.get("memavailable", 0) / 1024)
 
-    return {
-        "cpu": {
+    try:
+        cpu = {
             "load_1m": float(load[0]),
             "load_5m": float(load[1]),
             "load_15m": float(load[2]),
             "cores": cpu_count,
-        },
+        }
+    except (ValueError, IndexError) as e:
+        failures.append(f"loadavg: {e}")
+        cpu = {"load_1m": 0.0, "load_5m": 0.0, "load_15m": 0.0, "cores": cpu_count}
+
+    result = {
+        "cpu": cpu,
         "memory": {
             "total_mb": mem_total_mb,
             "available_mb": mem_avail_mb,
@@ -482,7 +560,11 @@ async def system_health(_user: str = Depends(require_auth)):
         "disk": disk,
         "uptime_seconds": uptime_secs,
         "containers": containers,
+        "degraded": bool(failures),
     }
+    if failures:
+        result["detail"] = "; ".join(failures)
+    return result
 
 
 # ---------------------------------------------------------------------------
