@@ -105,7 +105,11 @@ Plans:
   4. When a dashboard/status endpoint hits an upstream or transient failure, the page stays usable and shows a clear status banner instead of breaking or hanging
   5. Frontend surfaces API/network errors to the user with actionable messaging (what failed, what to try), never failing silently or dumping a raw stack/error string
 
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+
+- [ ] 04-01-PLAN.md — Backend server_state + version fallback, frontend state-aware rendering + error banner
 
 ### Phase 5: Professional Visual Redesign
 
