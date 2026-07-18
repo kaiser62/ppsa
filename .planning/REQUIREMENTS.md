@@ -1,85 +1,74 @@
-# Requirements: PPSA — Token-Efficient Build Verification
+# Requirements: PPSA — WebUI Professional Overhaul (v1.4.0)
 
-**Defined:** 2026-07-16
-**Core Value:** A user can boot the appliance and their friends can reach a working Palworld server over the private overlay network — every build must preserve that end-to-end path.
+**Defined:** 2026-07-19
+**Core Value:** A user can boot the appliance, and their friends can reach a working Palworld server over the private overlay network — every build must preserve that end-to-end path.
 
-> Scope note: PPSA's shipped appliance capabilities are already Validated (see
-> `.planning/PROJECT.md`). This milestone targets the current active goal —
-> making every future build's install verification reliable **and** cheap in
-> tokens, by driving it over NetBird SSH instead of blind VBox scancode/screenshot
-> loops.
+> Scope note: PPSA's appliance + build-verification capabilities are already
+> Validated (see `.planning/PROJECT.md`). This milestone targets the management
+> WebUI: make it look professional and intentional, and fix the dashboard
+> correctness bugs — all without changing the FastAPI + no-build architecture or
+> the NetBird-only port exposure.
+
+## Architecture invariants (do not violate)
+
+- Single FastAPI app (`docker/webui/app/main.py`) serves both `/api/*` and static frontend.
+- Frontend is plain JS/CSS/HTML at `docker/webui/app/static/` — **no framework, no build step**.
+- `webui/frontend/` is orphaned — do not touch.
+- Frontend is baked into the image by `scripts/build-live-usb.sh`.
+- WebUI/game ports stay NetBird-only (`100.64.0.0/10` via `WG_FRIENDS`); no LAN exposure.
 
 ## v1 Requirements
 
-Requirements for the current milestone. Each maps to a roadmap phase.
+### Visual Redesign
 
-### Overlay Access
+- [ ] **UI-01**: The WebUI presents a cohesive, intentional visual design (typography, color, spacing, components) that does not read as a templated default, applied consistently across all tabs
+- [ ] **UI-02**: The dashboard, server controls, firewall, backup, and Wi-Fi tabs share one design system (shared CSS variables/components) rather than ad-hoc per-tab styling
+- [ ] **UI-03**: The redesigned UI remains a single static bundle with no framework and no build step, served by the existing FastAPI app
+- [ ] **UI-04**: The UI is responsive/usable on a typical laptop and phone browser (the onboarding and friend-facing case)
 
-- [ ] **NET-01**: A freshly installed test VM is reachable over SSH at its NetBird overlay IP from a designated NetBird dev peer, with no console-injected ufw/LAN exception
-- [ ] **NET-02**: The test peer enrolls at a persistent, reserved NetBird IP so every build's test VM is reachable at the same overlay address (reserved IP or dedicated test setup key)
-- [ ] **NET-03**: The test-peer enrollment + persistent-IP setup is documented as a repeatable procedure a future session can follow without rediscovery
+### Dashboard Correctness
 
-### Smoke Test
+- [ ] **DASH-01**: The dashboard displays the running Palworld game server version correctly (sourced reliably even when the REST API returns an empty version field)
+- [ ] **DASH-02**: On fresh boot, while the server is still initializing, the dashboard shows a clear "server starting" / initializing state instead of blank fields or zeros
+- [ ] **DASH-03**: Empty or not-yet-available metrics and player data render as explicit empty states, not silently blank
 
-- [x] **TEST-01**: The full install smoke checklist (stack up, containers healthy, firewall chain present, NetBird connected, WG dormant, WebUI reachable, backup end-to-end) runs over SSH text output — no screenshots, no scancode typing
-- [x] **TEST-02**: The smoke checklist runs as one host-side script that returns a single pass/fail summary rather than dozens of interactive tool calls
-- [x] **TEST-03**: Raw test output (container logs, verbose command output) is captured to files or a subagent and only a distilled pass/fail summary reaches the main working context
+### Error Handling
 
-### Regression Guard
-
-- [x] **TEST-04**: The scripted smoke test asserts the three v1.3.0-nb.12 fixes (server-action 200, non-blocking backup trigger, backup archive actually written) so a regression fails the run automatically
-
-### WebUI Backup & Restore
-
-> Appliance WebUI feature (separate concern from the testing milestone above). Added as Phase 3.
-
-- [ ] **BKP-01**: From the WebUI, a "save-file backup" action creates a timestamped archive of ONLY the Palworld SaveGames data (not a full volume/offen backup) without stopping the palworld container, and the archive lands in the backups directory
-- [ ] **BKP-02**: The WebUI lists save-file archives and can restore from one already present on the box (selected from the list)
-- [ ] **BKP-03**: The WebUI can restore from a save archive uploaded by the user from their own computer
-- [ ] **BKP-04**: Restore is safe-by-default: it requires an explicit user confirmation, stops palworld, backs up the current SaveGames first, extracts the chosen archive over SaveGames, then restarts palworld
-- [ ] **BKP-05**: Restore validates the archive is a well-formed Palworld save archive BEFORE touching the live save, and reports a clear success/failure result to the user ("restore from webui correctly")
+- [ ] **DASH-04**: Dashboard and status endpoints degrade gracefully on upstream/transient failures — the page stays usable and shows a clear status banner rather than breaking
+- [ ] **DASH-05**: Frontend surfaces API/network errors to the user with actionable messaging instead of failing silently or showing raw errors
 
 ## v2 Requirements
 
 Deferred — acknowledged but not in this milestone.
 
-### CI Automation
-
-- **CI-01**: Boot the built image inside GitHub Actions and run the smoke test there, so local VBox testing becomes exception-only
-- **CI-02**: Publish smoke-test pass/fail as a release-gate check
+- **UI-V2-01**: Live-updating dashboard via websockets/SSE (currently poll-based)
+- **UI-V2-02**: Theming / light-dark toggle
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Building images locally | Build policy: GitHub Actions only; local is verification-only |
-| Opening WebUI/game ports to LAN for test convenience | Appliance is NetBird-only by design |
-| Removing the VBox test path entirely | Still the sanctioned local verification environment; only reducing its token cost |
-| Replacing NetBird with a different overlay for testing | NetBird is the shipped primary path; test over the real network |
+| Introducing a JS framework or build step (React/Vue/bundlers) | Architecture invariant: plain static, baked into image |
+| Opening WebUI ports to LAN | Appliance is NetBird-only by design |
+| Backend behavior changes beyond what the bugfixes require | Milestone is UI + dashboard correctness, not a backend rewrite |
+| New appliance/game features | PPSA packages the community server image unchanged |
+| Editing `webui/frontend/` | Orphaned copy, not the live code |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| NET-01 | Phase 1 | Pending |
-| NET-02 | Phase 1 | Pending |
-| NET-03 | Phase 1 | Pending |
-| TEST-01 | Phase 2 | Complete |
-| TEST-02 | Phase 2 | Complete |
-| TEST-03 | Phase 2 | Complete |
-| TEST-04 | Phase 2 | Complete |
-| BKP-01 | Phase 3 | Pending |
-| BKP-02 | Phase 3 | Pending |
-| BKP-03 | Phase 3 | Pending |
-| BKP-04 | Phase 3 | Pending |
-| BKP-05 | Phase 3 | Pending |
+| UI-01 | TBD | Pending |
+| UI-02 | TBD | Pending |
+| UI-03 | TBD | Pending |
+| UI-04 | TBD | Pending |
+| DASH-01 | TBD | Pending |
+| DASH-02 | TBD | Pending |
+| DASH-03 | TBD | Pending |
+| DASH-04 | TBD | Pending |
+| DASH-05 | TBD | Pending |
 
 **Coverage:**
 
-- v1 requirements: 12 total
-- Mapped to phases: 12
-- Unmapped: 0 ✓
-
----
-*Requirements defined: 2026-07-16*
-*Last updated: 2026-07-16 after adding Phase 3 (WebUI Save-File Backup & Restore — BKP-01..05)*
+- v1 requirements: 9 total
+- Mapped to phases: filled by roadmap
