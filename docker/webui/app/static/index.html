@@ -658,34 +658,57 @@ function showPage(name, ev) {
 async function refreshDashboard() {
   try {
     const data = await api('/api/dashboard');
-    document.getElementById('stat-players').textContent = data.player_count ?? '0';
-    document.getElementById('stat-fps').textContent = data.metrics?.serverfps != null ? Math.round(data.metrics.serverfps) : 'Metrics unavailable';
+    const state = data.server_state || 'unavailable';
+    const starting = state === 'starting';
+
+    // Players count: only show a real number when the server is up and the
+    // player list is genuinely known (players_known). While starting/unavailable
+    // the count is unknown, so show an em dash rather than a misleading "0" that
+    // would read as "server up, nobody online".
+    document.getElementById('stat-players').textContent =
+      data.players_known ? (data.player_count ?? 0) : '—';
+
+    // FPS / Uptime: real value when present; "Starting..." while the server is
+    // still initializing (metrics not up yet); "Metrics unavailable" only when
+    // the metric is genuinely absent on a server that is NOT starting.
+    const fps = data.metrics?.serverfps;
+    document.getElementById('stat-fps').textContent =
+      fps != null ? Math.round(fps) : (starting ? 'Starting...' : 'Metrics unavailable');
     const upSec = data.metrics?.uptime;
-    document.getElementById('stat-uptime').textContent = upSec != null ? formatUptime(upSec) : 'Metrics unavailable';
-    document.getElementById('stat-version').textContent = (data.version && data.version !== 'unavailable') ? data.version : 'Game version unavailable';
+    document.getElementById('stat-uptime').textContent =
+      upSec != null ? formatUptime(upSec) : (starting ? 'Starting...' : 'Metrics unavailable');
+
+    // Version reads the durable TOP-LEVEL data.version (Task 1: REST -> log ->
+    // cache), NOT data.server.version — so it survives log rotation.
+    document.getElementById('stat-version').textContent =
+      (data.version && data.version !== 'unavailable') ? data.version : 'Game version unavailable';
 
     // Server state banner
-    const state = data.server_state || 'unavailable';
     const banner = document.getElementById('dashboard-alert');
     if (state === 'running') {
       banner.classList.remove('show');
-    } else if (state === 'starting') {
-      showAlert('Palworld server is starting up, please wait...', 'info', 'dashboard-alert');
+    } else if (starting) {
+      showAlert('Palworld server is starting up, please wait... (dashboard will refresh automatically)', 'info', 'dashboard-alert');
     } else if (state === 'stopped') {
       showAlert('Server is stopped. Start it from the Controls tab.', 'warning', 'dashboard-alert');
     } else {
-      showAlert('Dashboard temporarily unavailable, retrying...', 'error', 'dashboard-alert');
+      showAlert('Palworld server is unreachable — check that it is running. Retrying automatically...', 'error', 'dashboard-alert');
     }
 
+    // Connected players table: three honest states.
     const tbody = document.getElementById('player-table-body');
-    if (data.players?.players?.length) {
+    if (!data.players_known) {
+      tbody.innerHTML = '<tr><td colspan="4">Waiting for server...</td></tr>';
+    } else if (data.players?.players?.length) {
       tbody.innerHTML = data.players.players.map(p => `<tr><td>${e(p.name||'')}</td><td>${e(p.steamid||'')}</td><td>${p.level??'-'}</td><td>${p.ping??'-'}</td></tr>`).join('');
     } else {
       tbody.innerHTML = '<tr><td colspan="4">No players online</td></tr>';
     }
-  } catch(e) {
-    showAlert('Status refresh failed — check connection. Retrying...', 'error', 'dashboard-alert');
-    console.error('Dashboard:', e);
+  } catch(err) {
+    // DASH-05: surface a friendly, actionable sentence in the banner — never a
+    // raw error string in a card. console.error stays for debugging only.
+    showAlert('Status refresh failed — check your connection. Retrying automatically...', 'error', 'dashboard-alert');
+    console.error('Dashboard:', err);
   }
 }
 
