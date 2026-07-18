@@ -109,7 +109,7 @@ Plans:
 
 Plans:
 
-- [ ] 04-01-PLAN.md — Backend server_state + version fallback, frontend state-aware rendering + error banner
+- [ ] 04-01-PLAN.md — Harden dashboard/status backend (durable version cache, bounded concurrent upstream fetch, players_known signal, graceful /api/system degrade) + honest state-aware frontend rendering; live-verify DASH-01..05
 
 ### Phase 5: Professional Visual Redesign
 
