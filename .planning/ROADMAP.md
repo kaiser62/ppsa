@@ -1,21 +1,9 @@
-# Roadmap: PPSA — Token-Efficient Build Verification
+# Roadmap: PPSA — Portable Palworld Server Appliance
 
-## Overview
+## Milestones
 
-PPSA's shipped appliance capabilities are already Validated — this milestone
-does not touch the appliance itself. It replaces the *verification* method for
-future builds: today, confirming a fresh install works means blind VBox
-scancode typing, screenshot polling, and dumping raw container logs into the
-working context. The appliance already enrolls in NetBird at first boot, and
-SSH is already gated open to `100.64.0.0/10` through the `WG_FRIENDS` chain —
-so a test VM is reachable over ordinary SSH the moment it finishes installing.
-
-Two phases get there. Phase 1 makes a fresh test VM reachable over SSH at a
-stable, reserved NetBird overlay IP, documented so a future session doesn't
-have to rediscover the enrollment dance. Phase 2 builds the one-shot smoke
-test script that rides that SSH connection: it runs the full install
-checklist, asserts the three nb.12 regression fixes explicitly, keeps raw
-output off to the side, and reports a single pass/fail summary.
+- ✅ **v1.3.0 Build Verification & WebUI Backup** - Phases 1-3 (shipped 2026-07-17)
+- 🚧 **v1.4.0 WebUI Professional Overhaul** - Phases 4-5 (in progress)
 
 ## Phases
 
@@ -25,12 +13,28 @@ output off to the side, and reports a single pass/fail summary.
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
+Phase numbering is continuous across milestones — v1.4.0 continues from Phase 4.
 
-- [ ] **Phase 1: Overlay Access** - A fresh test VM is reachable over SSH at a persistent, reserved NetBird overlay IP, with the enrollment procedure documented for repeat use
-- [ ] **Phase 2: Scripted Smoke Test** - One host-side script drives the full install checklist over that SSH connection, asserts the nb.12 regression fixes, and reports a single pass/fail summary with raw output kept out of the main context
-- [ ] **Phase 3: WebUI Save-File Backup & Restore** - The WebUI gains a lightweight save-file backup action and a safe restore flow (from an on-box archive or an uploaded file) that correctly replaces the live Palworld save
+<details>
+<summary>✅ v1.3.0 Build Verification & WebUI Backup (Phases 1-3) - SHIPPED 2026-07-17</summary>
+
+- [x] **Phase 1: Overlay Access** - A fresh test VM is reachable over SSH at a persistent, reserved NetBird overlay IP, with the enrollment procedure documented for repeat use
+- [x] **Phase 2: Scripted Smoke Test** - One host-side script drives the full install checklist over that SSH connection, asserts the nb.12 regression fixes, and reports a single pass/fail summary with raw output kept out of the main context
+- [x] **Phase 3: WebUI Save-File Backup & Restore** - The WebUI gains a lightweight save-file backup action and a safe restore flow (from an on-box archive or an uploaded file) that correctly replaces the live Palworld save
+
+</details>
+
+### 🚧 v1.4.0 WebUI Professional Overhaul (Phases 4-5) - In Progress
+
+**Milestone Goal:** Redesign the plain-JS WebUI to look professional and intentional and fix the dashboard correctness/error-handling bugs — without changing the FastAPI + no-build architecture or the NetBird-only port exposure.
+
+- [ ] **Phase 4: Dashboard Correctness & Error Handling** - The dashboard reports the real game version, shows honest server-starting/empty states on fresh boot, and degrades gracefully with actionable messaging when upstream calls fail
+- [ ] **Phase 5: Professional Visual Redesign** - Every WebUI tab shares one intentional, non-templated design system as a single static bundle (no framework, no build step) that stays usable on laptop and phone
 
 ## Phase Details
+
+<details>
+<summary>✅ v1.3.0 phase details (Phases 1-3)</summary>
 
 ### Phase 1: Overlay Access
 
@@ -47,7 +51,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 
-- [ ] 01-01-PLAN.md — Isolated NetBird test-peer identity, stable hostname/DNS-label mechanism, live-verified SSH-over-NetBird access, and updated docs/skill
+- [x] 01-01-PLAN.md — Isolated NetBird test-peer identity, stable hostname/DNS-label mechanism, live-verified SSH-over-NetBird access, and updated docs/skill
 
 ### Phase 2: Scripted Smoke Test
 
@@ -83,18 +87,51 @@ Plans:
 
 Plans:
 
-- [ ] 03-01-PLAN.md — Backend: save-file backup endpoint, restore API (on-box + upload), archive validation, _run_docker stop/start
-- [ ] 03-02-PLAN.md — Frontend: Save-File Backup button, restore actions + confirm on archive rows, upload-tar.gz card, JS handlers
+- [x] 03-01-PLAN.md — Backend: save-file backup endpoint, restore API (on-box + upload), archive validation, _run_docker stop/start
+- [x] 03-02-PLAN.md — Frontend: Save-File Backup button, restore actions + confirm on archive rows, upload-tar.gz card, JS handlers
 
-> **Scope note:** Phase 3 is an appliance WebUI feature, distinct from the Phase 1–2 build-verification milestone. Kept in this roadmap for tracking; may be split into its own milestone later.
+</details>
+
+### Phase 4: Dashboard Correctness & Error Handling
+
+**Goal**: The management dashboard tells the truth about the server — it shows the real running game version, distinguishes "still starting" from "broken" on a fresh boot, renders explicit empty states instead of silent blanks, and stays usable with a clear, actionable banner when an upstream/transient call fails.
+**Depends on**: Nothing (independent of Phase 5; backend + data-source correctness)
+**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05
+**Success Criteria** (what must be TRUE):
+
+  1. The dashboard shows the correct running Palworld game version even when the REST `/info` version field is empty — the value is sourced reliably (e.g. parsed from the container log) rather than displaying blank
+  2. On a fresh boot, while the palworld container is still initializing, the dashboard shows an explicit "server starting / initializing" state instead of blank fields or zeroed metrics
+  3. Metrics and player data that are not yet available render as explicit empty states ("no players yet", "metrics unavailable") rather than silently blank or misleading zeros
+  4. When a dashboard/status endpoint hits an upstream or transient failure, the page stays usable and shows a clear status banner instead of breaking or hanging
+  5. Frontend surfaces API/network errors to the user with actionable messaging (what failed, what to try), never failing silently or dumping a raw stack/error string
+
+**Plans**: TBD
+
+### Phase 5: Professional Visual Redesign
+
+**Goal**: The WebUI looks like an intentional product rather than a templated default — one cohesive design system (typography, color, spacing, components) applied consistently across the dashboard, server controls, firewall, backup, and Wi-Fi tabs — delivered as a single static bundle with no framework and no build step, and usable on both a laptop and a phone.
+**Depends on**: Phase 4 (redesign builds on the corrected dashboard states/empty-state affordances so the visual layer dresses real, honest data)
+**Requirements**: UI-01, UI-02, UI-03, UI-04
+**Success Criteria** (what must be TRUE):
+
+  1. Every WebUI tab (dashboard, server controls, firewall, backup, Wi-Fi) presents a cohesive, intentional visual design — typography, color, spacing, and components — that does not read as a templated/unstyled default
+  2. All tabs draw from one shared design system (shared CSS variables/components) rather than ad-hoc per-tab styling, so a change to the system propagates everywhere
+  3. The redesigned UI is still a single static bundle served by the existing FastAPI app — no JS framework, no bundler, no build step, and `webui/frontend/` is untouched
+  4. The UI is usable and readable on both a typical laptop browser and a phone browser (the onboarding and friend-facing case), without horizontal scrolling or broken layout
+**Plans**: TBD
+**UI hint**: yes
 
 ## Progress
 
 **Execution Order:**
-Phases 1 → 2 are the testing milestone (2 depends on 1). Phase 3 is independent and can be planned/executed in parallel with either.
+Phases execute in numeric order. Phase 4 (dashboard correctness) is independent and can start immediately; Phase 5 (visual redesign) depends on Phase 4 so the new visual layer dresses corrected, honest dashboard data. Phase 5 routes through `/gsd-ui-phase` for a UI-SPEC design contract before planning.
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Overlay Access | 1/1 | Not started (partial) | - |
-| 2. Scripted Smoke Test | 1/1 | In Progress|  |
-| 3. WebUI Save-File Backup & Restore | 2/2 | Complete | 2026-07-16 |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. Overlay Access | v1.3.0 | 1/1 | Complete | 2026-07-17 |
+| 2. Scripted Smoke Test | v1.3.0 | 1/1 | Complete | 2026-07-17 |
+| 3. WebUI Save-File Backup & Restore | v1.3.0 | 2/2 | Complete | 2026-07-17 |
+| 4. Dashboard Correctness & Error Handling | v1.4.0 | 0/TBD | Not started | - |
+| 5. Professional Visual Redesign | v1.4.0 | 0/TBD | Not started | - |
+</content>
+</invoke>
