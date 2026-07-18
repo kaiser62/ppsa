@@ -121,6 +121,7 @@
   .alert-success { background: #14532d; color: var(--green); }
   .alert-error { background: #450a0a; color: var(--red); }
   .alert-info { background: #1e3a5f; color: var(--primary); }
+  .alert-warning { background: #422006; color: var(--yellow); }
 
   /* Pages */
   .page { display: none; }
@@ -198,6 +199,7 @@
 
     <!-- Dashboard -->
     <div id="page-dashboard" class="page active">
+      <div id="dashboard-alert" class="alert" style="display:none"></div>
       <div class="grid" id="dash-stats">
         <div class="card"><h3>Players</h3><div class="value" id="stat-players">-</div></div>
         <div class="card"><h3>Server FPS</h3><div class="value" id="stat-fps">-</div></div>
@@ -656,11 +658,24 @@ function showPage(name, ev) {
 async function refreshDashboard() {
   try {
     const data = await api('/api/dashboard');
-    document.getElementById('stat-players').textContent = data.player_count ?? '-';
-    document.getElementById('stat-fps').textContent = data.metrics?.serverfps ?? '-';
-    const upSec = data.metrics?.uptime ?? 0;
-    document.getElementById('stat-uptime').textContent = formatUptime(upSec);
-    document.getElementById('stat-version').textContent = data.server?.version ?? '-';
+    document.getElementById('stat-players').textContent = data.player_count ?? '0';
+    document.getElementById('stat-fps').textContent = data.metrics?.serverfps != null ? Math.round(data.metrics.serverfps) : 'Metrics unavailable';
+    const upSec = data.metrics?.uptime;
+    document.getElementById('stat-uptime').textContent = upSec != null ? formatUptime(upSec) : 'Metrics unavailable';
+    document.getElementById('stat-version').textContent = (data.version && data.version !== 'unavailable') ? data.version : 'Game version unavailable';
+
+    // Server state banner
+    const state = data.server_state || 'unavailable';
+    const banner = document.getElementById('dashboard-alert');
+    if (state === 'running') {
+      banner.classList.remove('show');
+    } else if (state === 'starting') {
+      showAlert('Palworld server is starting up, please wait...', 'info', 'dashboard-alert');
+    } else if (state === 'stopped') {
+      showAlert('Server is stopped. Start it from the Controls tab.', 'warning', 'dashboard-alert');
+    } else {
+      showAlert('Dashboard temporarily unavailable, retrying...', 'error', 'dashboard-alert');
+    }
 
     const tbody = document.getElementById('player-table-body');
     if (data.players?.players?.length) {
@@ -668,7 +683,10 @@ async function refreshDashboard() {
     } else {
       tbody.innerHTML = '<tr><td colspan="4">No players online</td></tr>';
     }
-  } catch(e) { console.error('Dashboard:', e); }
+  } catch(e) {
+    showAlert('Status refresh failed — check connection. Retrying...', 'error', 'dashboard-alert');
+    console.error('Dashboard:', e);
+  }
 }
 
 // --- Players ---

@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import docker as _docker_sdk
+from docker import errors as _docker_errors
 _docker = _docker_sdk.from_env()
 from fastapi import FastAPI, HTTPException, Depends, status, UploadFile
 from fastapi.responses import Response
@@ -353,21 +354,66 @@ async def change_password(data: dict, _user: str = Depends(require_auth)):
 # ---------------------------------------------------------------------------
 @app.get("/api/dashboard")
 async def dashboard(_user: str = Depends(require_auth)):
-    """Aggregate game server status for the dashboard."""
+    """Aggregate game server status for the dashboard.
+
+    Returns server_state (running/starting/stopped/unavailable) derived from
+    container status + REST reachability, plus a version field with log-parse
+    fallback when the Palworld REST /info endpoint returns an empty version.
+    """
+    # 1. Check container state
+    container_status = None
+    try:
+        c = _docker.containers.get("ppsa-palworld")
+        container_status = c.status
+    except _docker_errors.NotFound:
+        container_status = "not_found"
+    except Exception:
+        container_status = "unknown"
+
+    # 2. Try REST API
+    rest_ok = False
     try:
         info = await palworld_get("/info")
         metrics = await palworld_get("/metrics")
         players = await palworld_get("/players")
+        rest_ok = True
     except Exception as e:
         info = {"error": str(e)}
         metrics = {}
         players = []
+
+    # 3. Derive server_state
+    if container_status == "running" and rest_ok:
+        server_state = "running"
+    elif container_status == "running" and not rest_ok:
+        server_state = "starting"
+    elif container_status in ("exited", "paused"):
+        server_state = "stopped"
+    else:
+        server_state = "unavailable"
+
+    # 4. Version: try REST first, fall back to container log parse
+    version = ""
+    if rest_ok:
+        version = (info or {}).get("version", "") or ""
+    if not version:
+        try:
+            logs = _run_docker(["logs", "ppsa-palworld", "--tail", "50"])
+            m = re.search(r"Game version is v(\S+)", logs, re.IGNORECASE)
+            if m:
+                version = f"v{m.group(1)}"
+        except Exception:
+            pass
+    if not version:
+        version = "unavailable"
 
     return {
         "server": info,
         "metrics": metrics,
         "players": players,
         "player_count": len(players) if isinstance(players, list) else 0,
+        "server_state": server_state,
+        "version": version,
     }
 
 
