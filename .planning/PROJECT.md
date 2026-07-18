@@ -1,5 +1,16 @@
 # PPSA — Portable Palworld Server Appliance
 
+## Current Milestone: v1.4.0 WebUI Professional Overhaul
+
+**Goal:** Redesign the plain-JS WebUI to look professional and fix the dashboard
+bugs, keeping the FastAPI + no-build architecture and NetBird-only ports.
+
+**Target features:**
+- Professional frontend redesign — plain JS/CSS/HTML, no framework, no build step
+- Fix game version rendering blank (parse container log, not just REST API)
+- Fix empty dashboard states on fresh boot (server-starting affordance)
+- Harden weak error handling across dashboard endpoints
+
 ## What This Is
 
 PPSA is a bootable Debian 13 (Trixie) disk image that runs a Palworld dedicated
@@ -33,20 +44,18 @@ end-to-end path.
 - ✓ Consistent backups: offen stops palworld for a clean snapshot; non-blocking WebUI trigger — existing (v1.3.0-nb.12)
 - ✓ Wi-Fi onboarding hotspot (`PPSA-Setup`) so a first-time user can reach the WebUI — existing
 - ✓ CI build pipeline on GitHub Actions (`build-release.yml`, `build-installer.yml`) — existing
+- ✓ Token-efficient installer verification over NetBird SSH (text-first) — v1.3.0 Phase 01
+- ✓ Repeatable one-shot smoke test returning pass/fail summary (`scripts/ppsa-smoke-test.py`) — v1.3.0 Phase 02
+- ✓ WebUI save-file backup/restore/restore-upload endpoints + UI — v1.3.0 Phase 03
 
 ### Active
 
-<!-- Building toward these — the reason GSD was onboarded. -->
+<!-- Building toward these — milestone v1.4.0. -->
 
-- [ ] Token-efficient installer/build verification: verify a fresh install over
-      NetBird SSH (text-first) instead of blind VBox scancode typing + screenshot
-      polling + raw log dumps
-- [ ] Persistent NetBird IP for the test peer, so every build's test VM is
-      reachable at the same overlay address (reserved IP via dashboard/API or a
-      dedicated test setup key) — needs research at plan time
-- [ ] Repeatable one-shot smoke test that returns a pass/fail summary rather than
-      dozens of interactive tool calls (candidate: host-side scripted checklist
-      and/or subagent that returns only distilled findings)
+- [ ] WebUI looks professional and intentional (not templated-default) across all tabs
+- [ ] Game server version displays correctly on the dashboard
+- [ ] Fresh-boot dashboard shows meaningful server-starting/empty states, not blanks
+- [ ] Dashboard endpoints degrade gracefully on upstream/transient failures
 
 ### Out of Scope
 
@@ -107,4 +116,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-16 after initialization*
+*Last updated: 2026-07-19 — milestone v1.4.0 (WebUI Professional Overhaul) started*

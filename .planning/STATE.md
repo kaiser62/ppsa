@@ -1,19 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3.0
-milestone_name: milestone
-status: completed
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-07-16T21:25:46.659Z"
-last_activity: 2026-07-17
-last_activity_desc: SUMMARY.md created
+milestone: v1.4.0
+milestone_name: WebUI Professional Overhaul
+status: planning
+last_updated: "2026-07-18T20:55:05.973Z"
+last_activity: 2026-07-19
 progress:
-  total_phases: 3
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 3
-current_phase: 03
-current_phase_name: webui-backup-restore
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -23,9 +20,14 @@ current_phase_name: webui-backup-restore
 See: .planning/PROJECT.md (updated 2026-07-16)
 
 **Core value:** A user can boot the appliance, and their friends can reach a working Palworld server over the private overlay network — every build must preserve that end-to-end path.
-**Current focus:** Milestone v1.3.0 — 2 of 3 phases complete; Phase 02 undefined (roadmap gap)
+**Current focus:** Milestone v1.3.0 — all 3 phases complete
 
 ## Current Position
+
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-19 — Milestone v1.4.0 started
 
 ### Phase 01 (overlay-access) — COMPLETED (w/ caveats)
 
@@ -33,13 +35,19 @@ Plan: 1 of 1 — SUMMARY.md written
 Status: Task 1 (test-peer artifacts, doc) completed and committed. Task 2 (live re-enrollment against a real VM, SKILL.md update) not executed. Broader NetBird-mainline promotion work done separately.
 Last activity: 2026-07-17 — SUMMARY.md created
 
+### Phase 02 (scripted-smoke-test) — COMPLETED
+
+Plan: 1 of 1 — SUMMARY.md written
+Status: `scripts/ppsa-smoke-test.py` created (host-side Python 3, 10 check groups, ~25 checks, stdlib-only, plink/ssh transport, nb.12 regression guard). Installer-test SKILL.md updated to chain Phase 1 SSH path → Phase 2 script. `.gitignore` extended for smoke-test-logs/.
+Last activity: 2026-07-17 — Implementation done, summary written
+
 ### Phase 03 (webui-backup-restore) — COMPLETED
 
 Plans: 2 of 2 written; 2 of 2 summaries written (combined in 03-01-SUMMARY.md per plan output instruction)
 Status: Backend save-file/restore/restore-upload endpoints + frontend UI (Save-File Backup button, restore actions, upload card with confirmAction modals) implemented and committed. Full smoke test verified in VM (25/25 checks passed).
 Last activity: 2026-07-17 — Implementation done, summary covers both plans
 
-Progress: [████████░░] 75%
+Progress: [████████████] 100%
 
 ## Performance Metrics
 
@@ -103,6 +111,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-16T21:25:46.649Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-07-18T19:23:26.902Z
+Stopped at: context exhaustion at 79% (2026-07-18)
 Resume file: None
