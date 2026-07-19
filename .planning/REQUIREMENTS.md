@@ -28,14 +28,14 @@
 
 ### Dashboard Correctness
 
-- [ ] **DASH-01**: The dashboard displays the running Palworld game server version correctly (sourced reliably even when the REST API returns an empty version field)
-- [ ] **DASH-02**: On fresh boot, while the server is still initializing, the dashboard shows a clear "server starting" / initializing state instead of blank fields or zeros
-- [ ] **DASH-03**: Empty or not-yet-available metrics and player data render as explicit empty states, not silently blank
+- [x] **DASH-01**: The dashboard displays the running Palworld game server version correctly (sourced reliably even when the REST API returns an empty version field)
+- [x] **DASH-02**: On fresh boot, while the server is still initializing, the dashboard shows a clear "server starting" / initializing state instead of blank fields or zeros
+- [x] **DASH-03**: Empty or not-yet-available metrics and player data render as explicit empty states, not silently blank
 
 ### Error Handling
 
-- [ ] **DASH-04**: Dashboard and status endpoints degrade gracefully on upstream/transient failures — the page stays usable and shows a clear status banner rather than breaking
-- [ ] **DASH-05**: Frontend surfaces API/network errors to the user with actionable messaging instead of failing silently or showing raw errors
+- [x] **DASH-04**: Dashboard and status endpoints degrade gracefully on upstream/transient failures — the page stays usable and shows a clear status banner rather than breaking
+- [x] **DASH-05**: Frontend surfaces API/network errors to the user with actionable messaging instead of failing silently or showing raw errors
 
 ## v2 Requirements
 
@@ -62,14 +62,15 @@ Deferred — acknowledged but not in this milestone.
 | UI-02 | Phase 5 | Pending |
 | UI-03 | Phase 5 | Pending |
 | UI-04 | Phase 5 | Pending |
-| DASH-01 | Phase 4 | Pending |
-| DASH-02 | Phase 4 | Pending |
-| DASH-03 | Phase 4 | Pending |
-| DASH-04 | Phase 4 | Pending |
-| DASH-05 | Phase 4 | Pending |
+| DASH-01 | Phase 4 | Complete |
+| DASH-02 | Phase 4 | Complete |
+| DASH-03 | Phase 4 | Complete |
+| DASH-04 | Phase 4 | Complete |
+| DASH-05 | Phase 4 | Complete |
 
 **Coverage:**
 
 - v1 requirements: 9 total
 - Mapped to phases: 9/9 (Phase 4: DASH-01..05; Phase 5: UI-01..04) — 100%, no orphans, no duplicates
+
 </content>

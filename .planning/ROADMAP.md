@@ -28,7 +28,7 @@ Phase numbering is continuous across milestones — v1.4.0 continues from Phase 
 
 **Milestone Goal:** Redesign the plain-JS WebUI to look professional and intentional and fix the dashboard correctness/error-handling bugs — without changing the FastAPI + no-build architecture or the NetBird-only port exposure.
 
-- [ ] **Phase 4: Dashboard Correctness & Error Handling** - The dashboard reports the real game version, shows honest server-starting/empty states on fresh boot, and degrades gracefully with actionable messaging when upstream calls fail
+- [x] **Phase 4: Dashboard Correctness & Error Handling** - The dashboard reports the real game version, shows honest server-starting/empty states on fresh boot, and degrades gracefully with actionable messaging when upstream calls fail (completed 2026-07-20)
 - [ ] **Phase 5: Professional Visual Redesign** - Every WebUI tab shares one intentional, non-templated design system as a single static bundle (no framework, no build step) that stays usable on laptop and phone
 
 ## Phase Details
@@ -109,7 +109,7 @@ Plans:
 
 Plans:
 
-- [ ] 04-01-PLAN.md — Harden dashboard/status backend (durable version cache, bounded concurrent upstream fetch, players_known signal, graceful /api/system degrade) + honest state-aware frontend rendering; live-verify DASH-01..05
+- [x] 04-01-PLAN.md — Harden dashboard/status backend (durable version cache, bounded concurrent upstream fetch, players_known signal, graceful /api/system degrade) + honest state-aware frontend rendering; live-verify DASH-01..05
 
 ### Phase 5: Professional Visual Redesign
 
@@ -122,6 +122,7 @@ Plans:
   2. All tabs draw from one shared design system (shared CSS variables/components) rather than ad-hoc per-tab styling, so a change to the system propagates everywhere
   3. The redesigned UI is still a single static bundle served by the existing FastAPI app — no JS framework, no bundler, no build step, and `webui/frontend/` is untouched
   4. The UI is usable and readable on both a typical laptop browser and a phone browser (the onboarding and friend-facing case), without horizontal scrolling or broken layout
+
 **Plans**: TBD
 **UI hint**: yes
 
@@ -135,7 +136,7 @@ Phases execute in numeric order. Phase 4 (dashboard correctness) is independent 
 | 1. Overlay Access | v1.3.0 | 1/1 | Complete | 2026-07-17 |
 | 2. Scripted Smoke Test | v1.3.0 | 1/1 | Complete | 2026-07-17 |
 | 3. WebUI Save-File Backup & Restore | v1.3.0 | 2/2 | Complete | 2026-07-17 |
-| 4. Dashboard Correctness & Error Handling | v1.4.0 | 0/TBD | Not started | - |
+| 4. Dashboard Correctness & Error Handling | v1.4.0 | 1/1 | Complete    | 2026-07-20 |
 | 5. Professional Visual Redesign | v1.4.0 | 0/TBD | Not started | - |
 </content>
 </invoke>
