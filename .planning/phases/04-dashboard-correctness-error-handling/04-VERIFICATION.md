@@ -1,15 +1,14 @@
 ---
 phase: 04-dashboard-correctness-error-handling
 verified: 2026-07-20T00:00:00Z
-status: human_needed
+status: passed
 score: 5/5 must-haves verified
 behavior_unverified: 0
-overrides_applied: 0
+overrides_applied: 1
 behavior_unverified_items: []
-human_verification:
-  - test: "With at least one real Palworld client connected (join the server, or confirm via raw /api/dashboard JSON that players.players has entries), confirm the Players card shows the real numeric count (e.g. 1) and the Connected Players table lists the player."
-    expected: "stat-players renders the real integer (not an em-dash, not a stuck 0) and the table shows the connected player row with escaped name/steamid."
-    why_human: "The {\"players\":[...]} object-shape fix and player_count-from-extracted-list logic are verified structurally in source and the empty/known-false paths were proven live on nb14, but no live test drove a non-zero connected-player count (SUMMARY notes 'no Palworld client available'). Only a live join can confirm the numeric-count path end-to-end."
+human_verification_resolved:
+  - test: "Non-zero connected-player numeric count renders (real join)."
+    resolution: "Accepted passed-by-inspection by the operator (2026-07-20). The {\"players\":[...]} object-shape fix + player_count-from-extracted-list logic are verified in source (main.py:445-455) and the empty/known-false paths were proven live on nb14; the only unexercised step is an actual client join, deemed negligible risk. Follow-up: exercise a real join in a future smoke run if a client is available."
 ---
 
 # Phase 4: Dashboard Correctness & Error Handling Verification Report
