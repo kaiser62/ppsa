@@ -186,12 +186,12 @@ Plans:
   2. During a long-running install (e.g. slow Docker pulls), the tester distinguishes real progress from a genuine hang via heartbeat/timestamp polling, so a slow-but-working install is not falsely reported as failed
   3. A boot-chain verification failure and a hang-detected timeout produce distinguishable, actionable failure reasons in the tester's output rather than one generic "failed" result
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 Plans:
 
 - [x] 07-01-PLAN.md — install.sh: mark_step_activity() heartbeat helper writing a world-readable Unix timestamp to /run/ppsa-install.activity, wired into Step 3's Docker pull/up loops (BOOT-02 guest side)
-- [ ] 07-02-PLAN.md — ppsa-installer-e2e.py: verify_boot_chain() post-boot SSH classification (BOOT-01), heartbeat-aware hang detection extending wait_for_install_complete() (BOOT-02), wired into run() with a third distinguishable SUSPECTED HANG failure reason
+- [x] 07-02-PLAN.md — ppsa-installer-e2e.py: verify_boot_chain() post-boot SSH classification (BOOT-01), heartbeat-aware hang detection extending wait_for_install_complete() (BOOT-02), wired into run() with a third distinguishable SUSPECTED HANG failure reason
 
 ### Phase 8: Smoke-Test Integration & Unified Reporting
 
@@ -220,6 +220,6 @@ Phases execute in numeric order. Phase 6 (VM orchestration + scripted install) i
 | 4. Dashboard Correctness & Error Handling | v1.4.0 | 1/1 | Complete | 2026-07-20 |
 | 5. Professional Visual Redesign | v1.4.0 | 4/4 | Complete | 2026-07-20 |
 | 6. VM Orchestration & Scripted Install | v1.5.0 | 2/2 | Complete    | 2026-07-20 |
-| 7. Boot-Chain Verification & Hang Detection | v1.5.0 | 1/2 | In Progress|  |
+| 7. Boot-Chain Verification & Hang Detection | v1.5.0 | 2/2 | In Progress|  |
 | 8. Smoke-Test Integration & Unified Reporting | v1.5.0 | 0/? | Not started | - |
 </content>

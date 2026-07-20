@@ -16,7 +16,7 @@ reports one pass/fail summary.
 
 ### Boot Verification
 
-- [ ] **BOOT-01**: Script verifies the post-install boot chain came up correctly — signed shim/GRUB success, or explicitly documents the unsigned-fallback path when Secure Boot is off
+- [x] **BOOT-01**: Script verifies the post-install boot chain came up correctly — signed shim/GRUB success, or explicitly documents the unsigned-fallback path when Secure Boot is off
 - [x] **BOOT-02**: Script distinguishes a genuinely hung install from a slow-but-progressing one via heartbeat/timestamp polling, avoiding false-negative timeouts on slow Docker pulls
 
 ### Smoke Test & Reporting
@@ -59,7 +59,7 @@ Deferred to a future milestone. Tracked but not in current roadmap.
 | VM-02 | Phase 6 | Complete |
 | VM-03 | Phase 6 | Complete |
 | NET-01 | Phase 6 | Complete |
-| BOOT-01 | Phase 7 | Pending |
+| BOOT-01 | Phase 7 | Complete |
 | BOOT-02 | Phase 7 | Complete |
 | TEST-01 | Phase 8 | Pending |
 | TEST-02 | Phase 8 | Pending |
