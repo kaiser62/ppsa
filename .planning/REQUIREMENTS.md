@@ -11,8 +11,8 @@ reports one pass/fail summary.
 ### VM Orchestration
 
 - [x] **VM-01**: Script creates, boots, resets, and destroys a VirtualBox test VM unattended via VBoxManage — no manual GUI steps
-- [ ] **VM-02**: Script drives the installer TUI to completion via blind scancode keystroke injection, reusing the sequence proven in the `ppsa-installer-test` skill
-- [ ] **VM-03**: Script detects install completion by polling for `/opt/ppsa/.installed` (or equivalent first-boot marker) over SSH, distinguishing "still installing" from "done"
+- [x] **VM-02**: Script drives the installer TUI to completion via blind scancode keystroke injection, reusing the sequence proven in the `ppsa-installer-test` skill
+- [x] **VM-03**: Script detects install completion by polling for `/opt/ppsa/.installed` (or equivalent first-boot marker) over SSH, distinguishing "still installing" from "done"
 
 ### Boot Verification
 
@@ -56,8 +56,8 @@ Deferred to a future milestone. Tracked but not in current roadmap.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | VM-01 | Phase 6 | Complete |
-| VM-02 | Phase 6 | Pending |
-| VM-03 | Phase 6 | Pending |
+| VM-02 | Phase 6 | Complete |
+| VM-03 | Phase 6 | Complete |
 | NET-01 | Phase 6 | Complete |
 | BOOT-01 | Phase 7 | Pending |
 | BOOT-02 | Phase 7 | Pending |

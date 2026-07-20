@@ -4,17 +4,17 @@ milestone: v1.5.0
 milestone_name: Installer-ISO E2E Tester
 current_phase: 06
 current_phase_name: vm-orchestration-scripted-install
-status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-07-20T11:02:10.400Z"
+status: verifying
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-07-20T11:08:22.680Z"
 last_activity: 2026-07-20
 last_activity_desc: Phase 06 execution started
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 13
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 
 Phase: 06 (vm-orchestration-scripted-install) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-20 — Phase 06 execution started
 
 ### Milestone v1.5.0 Phases
@@ -80,6 +80,7 @@ Last activity: 2026-07-20 — Phase 06 execution started
 | Phase 05 P03 | 8min | 3 tasks | 1 files |
 | Phase 05 P04 | 12min | 3 tasks | 1 files |
 | Phase 06 P01 | 12min | 2 tasks | 1 files |
+| Phase 06 P02 | 4min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Recent decisions affecting current work:
 - Phase 7 depends on Phase 6 (needs a completed scripted install to verify boot against); Phase 8 depends on both Phase 6 and 7 (needs a verified-booted box to smoke-test)
 - Coarse granularity (config.json) applied: 8 requirements compressed into 3 phases along the natural install→verify→test pipeline rather than one phase per requirement category
 - [Phase ?]: 06-01: Combined Task 1+2 into a single commit since both modify the same new file (scripts/ppsa-installer-e2e.py) and are tightly interdependent
+- [Phase ?]: Split Task 1 (TUI driving) and Task 2 (completion polling + run()) into separate atomic commits since acceptance criteria are independently checkable
+- [Phase ?]: wait_for_install_complete() distinguishes SSH-never-reachable from reachable-but-marker-absent timeouts via self.last_failure_reason, using SshRunner.exec()'s exit_code==-1 as the connection-failure sentinel
 
 ### Pending Todos
 
@@ -121,8 +124,8 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-07-20T11:02:10.386Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-07-20T11:08:22.667Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
