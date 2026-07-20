@@ -832,15 +832,17 @@ async function stopServer() {
 }
 
 async function kickPlayer(uid) {
-  if (!confirm('Kick player ' + uid + '?')) return;
-  await api('/api/players/kick', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({userid: uid}) });
-  refreshPlayers();
+  confirmAction('Kick player ' + uid + '?', async () => {
+    await api('/api/players/kick', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({userid: uid}) });
+    refreshPlayers();
+  });
 }
 
 async function banPlayer(uid) {
-  if (!confirm('Ban player ' + uid + '? This is permanent.')) return;
-  await api('/api/players/ban', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({userid: uid}) });
-  refreshPlayers();
+  confirmAction('Ban player ' + uid + '? This is permanent.', async () => {
+    await api('/api/players/ban', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({userid: uid}) });
+    refreshPlayers();
+  });
 }
 
 // --- Logs ---
@@ -1178,13 +1180,14 @@ async function installMod() {
 }
 
 async function removeMod(name) {
-  if (!confirm('Remove mod ' + name + '?')) return;
-  try {
-    await api('/api/mods/' + encodeURIComponent(name), { method: 'DELETE' });
-    refreshMods();
-  } catch (err) {
-    showAlert('Error: ' + err.message, 'error', 'mods-alert');
-  }
+  confirmAction('Remove mod ' + name + '?', async () => {
+    try {
+      await api('/api/mods/' + encodeURIComponent(name), { method: 'DELETE' });
+      refreshMods();
+    } catch (err) {
+      showAlert('Error: ' + err.message, 'error', 'mods-alert');
+    }
+  });
 }
 
 // --- Firewall ---
