@@ -105,7 +105,8 @@
   }
   button.outline:hover { background: var(--surface2); }
   button.small { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
-  .btn-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .btn-group { display: flex; gap: var(--space-sm); flex-wrap: wrap; }
+  .btn-row { margin-top: var(--space-sm); display: flex; gap: var(--space-sm); flex-wrap: wrap; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; }
@@ -295,7 +296,7 @@
       <div class="section">
         <h2>Logs</h2>
         <textarea id="log-viewer" class="config-editor" readonly>Loading...</textarea>
-        <div style="margin-top:0.5rem;display:flex;gap:0.5rem">
+        <div class="btn-row">
           <button class="small" onclick="refreshLogs()">Refresh</button>
         </div>
       </div>
