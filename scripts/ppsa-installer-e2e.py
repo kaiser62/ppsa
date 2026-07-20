@@ -749,9 +749,10 @@ class InstallerE2ETester:
         to the summary + cleanup (cleanup itself is handled by main()'s
         atexit-registered destroy_vm(), not by this method).
 
-        Boot-chain verification (BOOT-01/BOOT-02: signed-vs-unsigned GRUB
-        detection) is explicitly Phase 7's responsibility and is NOT
-        performed here -- only a stub/log line notes that it was skipped.
+        Boot-chain verification (BOOT-01) runs after a successful
+        completion-poll, and heartbeat-aware hang detection (BOOT-02) is
+        folded into wait_for_install_complete() itself -- both implemented
+        in this phase (07-02).
         """
         steps = [
             ("create_vm", self.create_vm),
@@ -787,6 +788,10 @@ class InstallerE2ETester:
                     results.append(
                         ("wait_for_install_complete", f"PASS ({elapsed:.0f}s)")
                     )
+                    boot_chain_status, boot_chain_reason = self.verify_boot_chain(self.ssh_target)
+                    results.append(
+                        ("verify_boot_chain", f"{boot_chain_status}: {boot_chain_reason}")
+                    )
                 else:
                     results.append(
                         (
@@ -795,13 +800,14 @@ class InstallerE2ETester:
                         )
                     )
 
-        print(
-            "[ppsa-installer-e2e] NOTE: boot-chain verification (BOOT-01/"
-            "BOOT-02, signed-vs-unsigned GRUB detection) is Phase 7's "
-            "responsibility and is NOT performed by this script."
-        )
-
-        overall_pass = all(status == "PASS" or status.startswith("PASS") for _, status in results)
+        # overall_pass keys strictly off any FAIL-prefixed status -- PASS,
+        # WARN (e.g. unsigned boot-chain fallback), and SKIP (e.g. boot-chain
+        # check itself unreachable after install already succeeded) are all
+        # informational, not blocking. Backward-compatible with the existing
+        # FAIL-producing steps (create_vm/attach_iso/boot_vm/
+        # drive_installer_tui/wait_for_install_complete), which already only
+        # ever emit "FAIL: {reason}" strings.
+        overall_pass = all(not status.startswith("FAIL") for _, status in results)
 
         summary_word = "SUCCESS" if overall_pass else "FAILURE"
         print(f"[PPSA E2E Installer Test] {summary_word}: {self.iso_path.name}")
