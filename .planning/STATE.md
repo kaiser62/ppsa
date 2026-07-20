@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.5.0
 milestone_name: Installer-ISO E2E Tester
 status: planning
-last_updated: "2026-07-20T09:50:43.999Z"
+last_updated: "2026-07-20T10:15:00.000Z"
 last_activity: 2026-07-20
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,22 +17,28 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-19)
+See: .planning/PROJECT.md (updated 2026-07-20)
 
 **Core value:** A user can boot the appliance, and their friends can reach a working Palworld server over the private overlay network — every build must preserve that end-to-end path.
-**Current focus:** Phase 05 — Professional Visual Redesign
+**Current focus:** Phase 6 — VM Orchestration & Scripted Install
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 6 — VM Orchestration & Scripted Install (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-20 — Milestone v1.5.0 started
+Status: Roadmap created, awaiting phase planning
+Last activity: 2026-07-20 — ROADMAP.md and REQUIREMENTS.md traceability created for v1.5.0
 
-### Milestone v1.4.0 Phases
+### Milestone v1.5.0 Phases
 
-- **Phase 4: Dashboard Correctness & Error Handling** (DASH-01..05) — Not started. Backend + data-source fixes: correct game version, fresh-boot server-starting state, explicit empty states, graceful degradation + actionable frontend error messaging. Independent; can start immediately.
-- **Phase 5: Professional Visual Redesign** (UI-01..04) — Not started. UI phase (routes through `/gsd-ui-phase` for a UI-SPEC). One cohesive non-templated design system across all tabs, single static bundle (no framework/build step), laptop + phone responsive. Depends on Phase 4.
+- **Phase 6: VM Orchestration & Scripted Install** (VM-01, VM-02, VM-03, NET-01) — Not started. Unattended VirtualBox VM create/boot/destroy, blind-scancode TUI install drive, `/opt/ppsa/.installed` SSH poll for completion, pre-boot WG-identity-collision safety check + NetBird enrollment timeout tolerance. First phase; no dependencies.
+- **Phase 7: Boot-Chain Verification & Hang Detection** (BOOT-01, BOOT-02) — Not started. Verifies signed shim/GRUB success (or documents unsigned fallback), and heartbeat/timestamp polling to distinguish a hung install from a slow one. Depends on Phase 6.
+- **Phase 8: Smoke-Test Integration & Unified Reporting** (TEST-01, TEST-02) — Not started. Chains `scripts/ppsa-smoke-test.py` onto the verified-booted box, single script invocation, one pass/fail summary, raw output kept out of main context. Depends on Phase 6 and Phase 7.
+
+### Prior milestone (v1.4.0) — COMPLETED, shipped 2026-07-20
+
+- Phase 4 (Dashboard Correctness & Error Handling) — Complete
+- Phase 5 (Professional Visual Redesign) — Complete
 
 ### Prior milestone (v1.3.0) — COMPLETED, shipped 2026-07-17
 
@@ -44,15 +50,16 @@ Last activity: 2026-07-20 — Milestone v1.5.0 started
 
 **Velocity:**
 
-- Total plans completed: 1
+- Total plans completed: 10 (prior milestones)
 - Average duration: - min
-- Total execution time: 0 hours
+- Total execution time: 0 hours (this milestone)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 4 | 1 | - | - |
+| 5 | 4 | - | - |
 
 **Recent Trend:**
 
@@ -76,24 +83,21 @@ Last activity: 2026-07-20 — Milestone v1.5.0 started
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Milestone v1.4.0 scope: UI redesign + dashboard bugfixes, keep FastAPI + no-build architecture, NetBird-only ports (locked in PROJECT.md / REQUIREMENTS.md)
-- Roadmap split: dashboard-correctness/bugfix work (Phase 4, DASH-01..05) kept distinct from visual redesign (Phase 5, UI-01..04) so Phase 5's design contract stays clean
-- Phase 5 depends on Phase 4 so the new visual layer dresses corrected, honest dashboard data (real version, server-starting/empty states) rather than the buggy current output
-- DASH-01 grounding: `/api/dashboard` sources version from Palworld REST `/info`, which can return an empty version field — reliable source (e.g. container log parse) needed
-- Architecture invariant confirmed against live code: single `docker/webui/app/static/index.html` (~58KB, all tabs inline) served by the FastAPI app in `docker/webui/app/main.py`
-- [Phase ?]: Elevation cue implemented as 1px --surface2 border (not box-shadow) on .card/.section per UI-SPEC's 'subtle elevation cue' instruction
-- [Phase ?]: Phase 05 Plan 02: removed redundant inline display:none on #dashboard-alert beyond plan's literal action text (Rule 1 consistency fix) to satisfy zero-inline-style acceptance criteria
-- [Phase ?]: Phase 05 Plan 03: Firewall/Backup zero-inline-style acceptance criteria took precedence over narrower action-text bullet lists; 4 additional inline styles fixed beyond plan's literal action text
-- [Phase ?]: Phase 05 Plan 04: resetFirewall confirm copy reformatted to UI-SPEC verbatim slash-separated string (.modal-text is plain text, not <pre>); restartPalworld/wgDisconnect left on native confirm() as out-of-scope tabs
+- Milestone v1.5.0 scope: scripted installer-ISO E2E test (VM orchestration + boot-chain verification + existing smoke-test integration); CI wiring deferred as v2 stretch (needs self-hosted VirtualBox runner)
+- Roadmap split: VM orchestration/scripted install (Phase 6, VM-01..03 + NET-01) kept distinct from boot-chain verification (Phase 7, BOOT-01..02) and smoke-test integration/reporting (Phase 8, TEST-01..02) — natural pipeline order (install → verify boot → test → report)
+- NET-01 (WG identity collision safety check) placed in Phase 6 rather than its own phase — it gates VM boot itself, so it belongs with the orchestration phase that does the booting
+- Phase 7 depends on Phase 6 (needs a completed scripted install to verify boot against); Phase 8 depends on both Phase 6 and 7 (needs a verified-booted box to smoke-test)
+- Coarse granularity (config.json) applied: 8 requirements compressed into 3 phases along the natural install→verify→test pipeline rather than one phase per requirement category
 
 ### Pending Todos
 
-- Phase 4 planning (`/gsd-plan-phase 4`) — dashboard correctness + error handling
-- Phase 5 planning via `/gsd-ui-phase 5` → UI-SPEC before `/gsd-plan-phase 5`
+- Phase 6 planning (`/gsd-plan-phase 6`) — VM orchestration & scripted install
+- Phase 7 planning (`/gsd-plan-phase 7`) — boot-chain verification & hang detection
+- Phase 8 planning (`/gsd-plan-phase 8`) — smoke-test integration & unified reporting
 
 ### Blockers/Concerns
 
-- None.
+- None yet for this milestone. Research flagged: sbverify availability for boot-chain checks needs validation in Phase 7; empirical timeout calibration should happen from a hand-run of Phase 6 before hardening Phase 7's heartbeat thresholds.
 
 ## Deferred Items
 
@@ -101,18 +105,22 @@ Items acknowledged and carried forward:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| v2 requirement | UI-V2-01: Live-updating dashboard via websockets/SSE (currently poll-based) | Deferred to v2 | Milestone definition |
-| v2 requirement | UI-V2-02: Theming / light-dark toggle | Deferred to v2 | Milestone definition |
-| v2 requirement | CI-01: Boot built image in GitHub Actions and run smoke test there | Deferred to v2 | Prior milestone close |
-| v2 requirement | CI-02: Publish smoke-test pass/fail as a release-gate check | Deferred to v2 | Prior milestone close |
+| v2 requirement | UI-V2-01: Live-updating dashboard via websockets/SSE (currently poll-based) | Deferred to v2 | Milestone definition (v1.4.0) |
+| v2 requirement | UI-V2-02: Theming / light-dark toggle | Deferred to v2 | Milestone definition (v1.4.0) |
+| v2 requirement | CI-01: Wire the E2E tester into GitHub Actions via a self-hosted VirtualBox-capable runner | Deferred to v2 | Milestone definition (v1.5.0) |
+| v2 requirement | POL-01: Log aggregation with artifact cleanup (preserve logs on FAIL, clean up on PASS) | Deferred to v2 | Milestone definition (v1.5.0) |
+| v2 requirement | POL-02: Boot timeout tuning via config file/env vars | Deferred to v2 | Milestone definition (v1.5.0) |
+| v2 requirement | POL-03: Docker layer cache reuse on retry | Deferred to v2 | Milestone definition (v1.5.0) |
+| v2 requirement | POL-04: Health-check polling before smoke test to reduce false failures during partial boot | Deferred to v2 | Milestone definition (v1.5.0) |
 
 ## Session Continuity
 
-Last session: 2026-07-20T08:57:16.307Z
-Stopped at: Completed 05-04-PLAN.md — Phase 5 complete (4/4 plans), v1.4.0 milestone complete
+Last session: 2026-07-20T10:15:00.000Z
+Stopped at: ROADMAP.md and REQUIREMENTS.md traceability created for v1.5.0 (Phases 6-8, 8/8 requirements mapped)
 Resume file: None
-</content>
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Review and approve the roadmap
+- Start Phase 6 planning with `/gsd-plan-phase 6`
+</content>

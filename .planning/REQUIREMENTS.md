@@ -53,24 +53,23 @@ Deferred to a future milestone. Tracked but not in current roadmap.
 
 ## Traceability
 
-Populated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| VM-01 | TBD | Pending |
-| VM-02 | TBD | Pending |
-| VM-03 | TBD | Pending |
-| BOOT-01 | TBD | Pending |
-| BOOT-02 | TBD | Pending |
-| TEST-01 | TBD | Pending |
-| TEST-02 | TBD | Pending |
-| NET-01 | TBD | Pending |
+| VM-01 | Phase 6 | Pending |
+| VM-02 | Phase 6 | Pending |
+| VM-03 | Phase 6 | Pending |
+| NET-01 | Phase 6 | Pending |
+| BOOT-01 | Phase 7 | Pending |
+| BOOT-02 | Phase 7 | Pending |
+| TEST-01 | Phase 8 | Pending |
+| TEST-02 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 8 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 8 ⚠️ (expected — roadmap not yet created)
+- Mapped to phases: 8/8 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-07-20*
-*Last updated: 2026-07-20 after initial definition (research-informed)*
+*Last updated: 2026-07-20 after roadmap creation (Phases 6-8, 100% coverage)*
+</content>
