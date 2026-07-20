@@ -59,6 +59,16 @@ WG_HUB_URL = "http://pleaseee.eu.org:51831"
 WG_IDENTITY_PEER_NAME = "ppsa-server"
 WG_HANDSHAKE_STALE_SECONDS = 3600  # 1 hour, per installer-test skill's abort threshold
 
+# VM-03 completion-poll constants. SSH_USER/DEFAULT_PASSWORD match the
+# appliance's documented first-boot defaults (ppsa/ppsa), identical to the
+# existing scripts/ppsa-smoke-test.py precedent.
+SSH_USER = "ppsa"
+DEFAULT_PASSWORD = "ppsa"
+DEFAULT_SSH_PORT = 22
+INSTALL_COMPLETE_MARKER = "/opt/ppsa/.installed"
+POLL_INTERVAL_SECONDS = 15
+SSH_STALE_THRESHOLD_SECONDS = 300  # 5 min continuous unreachability, Pitfall 2 heartbeat guidance
+
 CommandResult = namedtuple("CommandResult", ["stdout", "stderr", "returncode"])
 
 # ---------------------------------------------------------------------------
@@ -112,6 +122,90 @@ def resolve_vbox_path(vbox_path):
     if sys.platform == "win32" and Path(WINDOWS_VBOXMANAGE_FALLBACK).exists():
         return WINDOWS_VBOXMANAGE_FALLBACK
     return vbox_path  # let the subprocess call fail with FileNotFoundError
+
+
+# ---------------------------------------------------------------------------
+# VM-03: minimal SSH transport (ported from scripts/ppsa-smoke-test.py's
+# SshTransport -- copied/adapted rather than imported across scripts, so this
+# file stays runnable standalone with no cross-script dependency).
+# ---------------------------------------------------------------------------
+class SshRunner:
+    """Auto-detecting SSH transport: plink (Windows/PuTTY) or ssh (Linux/
+    macOS/OpenSSH). Same exec(remote_cmd, timeout) -> (stdout, stderr,
+    exit_code) contract as ppsa-smoke-test.py's SshTransport.
+
+    Host-key handling (T-06-05, spoofing threat -- accepted for a disposable,
+    freshly-created test VM whose identity is not yet known): ssh uses
+    StrictHostKeyChecking=accept-new; plink accepts-on-first-connect via a
+    piped 'y' and pins the resulting SHA256 fingerprint for subsequent calls.
+    """
+
+    def __init__(self, ssh_target, password=None, port=DEFAULT_SSH_PORT, verbose=False):
+        self.ssh_target = ssh_target
+        self.password = password or DEFAULT_PASSWORD
+        self.port = port or DEFAULT_SSH_PORT
+        self.verbose = verbose
+        self.host_key = None
+        self.use_plink = sys.platform == "win32"
+
+    def _build_plink_cmd(self, remote_cmd, batch=True):
+        cmd = ["plink", "-ssh"]
+        if batch:
+            cmd.append("-batch")
+        if self.host_key:
+            cmd.extend(["-hostkey", self.host_key])
+        cmd.extend(["-pw", self.password])
+        cmd.extend(["-P", str(self.port), f"{SSH_USER}@{self.ssh_target}", remote_cmd])
+        return cmd
+
+    def _build_ssh_cmd(self, remote_cmd):
+        return [
+            "ssh",
+            "-o", "BatchMode=no",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "ConnectTimeout=10",
+            "-p", str(self.port),
+            f"{SSH_USER}@{self.ssh_target}",
+            remote_cmd,
+        ]
+
+    def accept_host_key(self):
+        """Accept the remote host key on first connection (plink only; ssh's
+        accept-new handles this transparently)."""
+        if not self.use_plink:
+            return
+        cmd = self._build_plink_cmd("hostname -s", batch=False)
+        try:
+            p = subprocess.run(cmd, input="y\n", capture_output=True, text=True, timeout=15)
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return
+        combined = p.stdout + "\n" + p.stderr
+        match = re.search(r"(SHA256:[A-Za-z0-9+/=]{10,})", combined)
+        if match:
+            self.host_key = match.group(1)
+
+    def exec(self, remote_cmd, timeout=15):
+        """Run a command on the remote VM. Returns (stdout, stderr,
+        exit_code). On timeout, exit_code is -1 and stderr describes it --
+        this is a connection-level failure, distinct from a successful SSH
+        call whose remote command simply exited non-zero."""
+        cmd = (
+            self._build_plink_cmd(remote_cmd, batch=self.host_key is not None)
+            if self.use_plink
+            else self._build_ssh_cmd(remote_cmd)
+        )
+        if self.verbose:
+            print(f"[SSH] $ {remote_cmd}", file=sys.stderr)
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            return p.stdout, p.stderr, p.returncode
+        except subprocess.TimeoutExpired:
+            return "", f"timed out after {timeout}s", -1
+        except FileNotFoundError:
+            tool = "plink" if self.use_plink else "ssh"
+            return "", f"{tool} not found on PATH", -1
+        except OSError as exc:
+            return "", str(exc), -1
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +322,8 @@ class InstallerE2ETester:
         keep_vm=False,
         timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
         verbose=False,
+        ssh_target=None,
+        ssh_password=None,
     ):
         self.iso_path = Path(iso_path).resolve()
         self.vm_name = vm_name
@@ -239,7 +335,13 @@ class InstallerE2ETester:
         self.keep_vm = keep_vm
         self.timeout_seconds = timeout_seconds
         self.verbose = verbose
+        self.ssh_target = ssh_target
+        self.ssh_password = ssh_password
         self._mac_address = None
+        # VM-03: set on wait_for_install_complete() timeout, distinguishing
+        # "SSH never reachable" from "reachable but not yet installed" (NET-01
+        # must_have on actionable/distinguishable timeout reporting).
+        self.last_failure_reason = None
 
         # VM working directory: alongside the default VirtualBox VMs folder
         # convention, but namespaced under a predictable path for this tool.
@@ -453,14 +555,168 @@ class InstallerE2ETester:
         except Exception as exc:  # noqa: BLE001 -- never raise from cleanup
             print(f"WARNING: cleanup for VM '{self.vm_name}' failed: {exc}", file=sys.stderr)
 
-    # TODO(Plan 06-02): implement run() -- TUI keystroke driving +
-    # `/opt/ppsa/.installed` completion polling, boot-chain verification,
-    # and smoke-test handoff. This plan (06-01) only stands up the VM
-    # lifecycle skeleton and the NET-01 pre-boot safety check.
+    def wait_for_install_complete(self, ssh_target, overall_timeout_seconds):
+        """Poll /opt/ppsa/.installed over SSH until the install completes or
+        the bounded overall timeout elapses (VM-03).
+
+        Distinguishes two DISTINCT timeout reasons (NET-01's actionable-
+        timeout-reporting must_have), stored in self.last_failure_reason:
+          - SSH never reachable at all during the whole run (host/tunnel/
+            NetBird enrollment issue)
+          - SSH became reachable but the .installed marker never appeared
+            (installer itself hung or failed)
+
+        Returns (True, elapsed_seconds) on success, (False, elapsed_seconds)
+        on timeout. Never raises -- SSH connection failures are treated as
+        "not yet reachable, keep polling" (Pitfall 7), not aborts.
+        """
+        runner = SshRunner(ssh_target, password=self.ssh_password, verbose=self.verbose)
+        runner.accept_host_key()
+
+        start = time.time()
+        last_successful_contact = None  # timestamp of last SSH command that actually ran
+
+        while True:
+            elapsed = time.time() - start
+            print(
+                f"[ppsa-installer-e2e] Polling {ssh_target} for "
+                f"{INSTALL_COMPLETE_MARKER} ... ({elapsed:.0f}s / "
+                f"{overall_timeout_seconds}s elapsed)"
+            )
+
+            stdout, stderr, exit_code = runner.exec(
+                f"test -f {INSTALL_COMPLETE_MARKER} && echo INSTALLED", timeout=15
+            )
+
+            # exit_code == -1 is this script's SshRunner convention for a
+            # connection-level failure (timeout, plink/ssh not found, OSError)
+            # -- distinct from a successful SSH call whose remote `test`
+            # simply evaluated false (exit_code 1, empty stdout).
+            connection_failed = exit_code == -1
+            if not connection_failed:
+                last_successful_contact = time.time()
+                if "INSTALLED" in stdout:
+                    elapsed = time.time() - start
+                    print(
+                        f"[ppsa-installer-e2e] {INSTALL_COMPLETE_MARKER} found "
+                        f"after {elapsed:.0f}s -- install complete."
+                    )
+                    return True, elapsed
+            else:
+                print(
+                    f"WARNING: SSH not yet reachable at {ssh_target}, "
+                    f"retrying... ({stderr.strip()})",
+                    file=sys.stderr,
+                )
+
+            elapsed = time.time() - start
+            if elapsed >= overall_timeout_seconds:
+                if last_successful_contact is None:
+                    self.last_failure_reason = (
+                        f"SSH never became reachable at {ssh_target} within "
+                        f"{overall_timeout_seconds}s (host/tunnel/NetBird "
+                        f"enrollment likely never came up)"
+                    )
+                else:
+                    stale_for = time.time() - last_successful_contact
+                    self.last_failure_reason = (
+                        f"SSH reached {ssh_target} but {INSTALL_COMPLETE_MARKER} "
+                        f"never appeared within {overall_timeout_seconds}s "
+                        f"(last successful SSH contact {stale_for:.0f}s ago -- "
+                        f"installer itself may be hung or failed)"
+                    )
+                print(f"FAIL: {self.last_failure_reason}", file=sys.stderr)
+                return False, elapsed
+
+            # Heartbeat-style staleness check (Pitfall 2, ported to this
+            # simpler polling model): if SSH has been unreachable for more
+            # than SSH_STALE_THRESHOLD_SECONDS *and* the overall timeout has
+            # also elapsed, the loop above already returns. This branch just
+            # keeps the "last successful contact" distinction fresh in logs.
+            if (
+                last_successful_contact is not None
+                and (time.time() - last_successful_contact) > SSH_STALE_THRESHOLD_SECONDS
+            ):
+                print(
+                    f"WARNING: no successful SSH contact in over "
+                    f"{SSH_STALE_THRESHOLD_SECONDS}s -- still within overall "
+                    f"timeout, continuing to poll",
+                    file=sys.stderr,
+                )
+
+            time.sleep(POLL_INTERVAL_SECONDS)
+
     def run(self):
-        raise NotImplementedError(
-            "run() is implemented in Plan 06-02 (TUI driving + first-boot polling)"
+        """Orchestrate the full pipeline: create -> attach -> boot -> drive
+        TUI -> poll for install completion -> summary.
+
+        check_wg_hub_identity_safe() already ran in main() before this method
+        is ever called -- run() starts from VM creation, not the safety
+        check. Each step is wrapped so the FIRST failure stops the pipeline
+        immediately (remaining steps are skipped) and falls straight through
+        to the summary + cleanup (cleanup itself is handled by main()'s
+        atexit-registered destroy_vm(), not by this method).
+
+        Boot-chain verification (BOOT-01/BOOT-02: signed-vs-unsigned GRUB
+        detection) is explicitly Phase 7's responsibility and is NOT
+        performed here -- only a stub/log line notes that it was skipped.
+        """
+        steps = [
+            ("create_vm", self.create_vm),
+            ("attach_iso", self.attach_iso),
+            ("boot_vm", self.boot_vm),
+            ("drive_installer_tui", self.drive_installer_tui),
+        ]
+        results = []
+
+        for step_name, step_fn in steps:
+            try:
+                step_fn()
+                results.append((step_name, "PASS"))
+            except Exception as exc:  # noqa: BLE001 -- record and stop, don't crash the run
+                results.append((step_name, f"FAIL: {exc}"))
+                break
+        else:
+            # All lifecycle/TUI steps passed -- now poll for install
+            # completion, only if an --ssh-target was supplied.
+            if not self.ssh_target:
+                results.append(
+                    (
+                        "wait_for_install_complete",
+                        "FAIL: no --ssh-target supplied; cannot poll for "
+                        "install completion",
+                    )
+                )
+            else:
+                success, elapsed = self.wait_for_install_complete(
+                    self.ssh_target, self.timeout_seconds
+                )
+                if success:
+                    results.append(
+                        ("wait_for_install_complete", f"PASS ({elapsed:.0f}s)")
+                    )
+                else:
+                    results.append(
+                        (
+                            "wait_for_install_complete",
+                            f"FAIL: {self.last_failure_reason}",
+                        )
+                    )
+
+        print(
+            "[ppsa-installer-e2e] NOTE: boot-chain verification (BOOT-01/"
+            "BOOT-02, signed-vs-unsigned GRUB detection) is Phase 7's "
+            "responsibility and is NOT performed by this script."
         )
+
+        overall_pass = all(status == "PASS" or status.startswith("PASS") for _, status in results)
+
+        summary_word = "SUCCESS" if overall_pass else "FAILURE"
+        print(f"[PPSA E2E Installer Test] {summary_word}: {self.iso_path.name}")
+        for step_name, status in results:
+            print(f"  {step_name}: {status}")
+
+        return overall_pass, results
 
 
 # ---------------------------------------------------------------------------
@@ -521,6 +777,19 @@ def build_arg_parser():
         help="Overall pipeline timeout in seconds",
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose diagnostic logging")
+    parser.add_argument(
+        "--ssh-target",
+        default=None,
+        help="Address to poll for install completion over SSH (NetBird DNS label, "
+        "overlay IP, or LAN IP). No default -- discovering the VM's address is out "
+        "of scope for this phase; the caller supplies an already-reachable address.",
+    )
+    parser.add_argument(
+        "--ssh-password",
+        default=None,
+        help=f"SSH password for the {SSH_USER} user (default: {DEFAULT_PASSWORD}, the "
+        "documented first-boot default)",
+    )
     return parser
 
 
@@ -563,16 +832,15 @@ def main():
         keep_vm=args.keep_vm,
         timeout_seconds=args.timeout_seconds,
         verbose=args.verbose,
+        ssh_target=args.ssh_target,
+        ssh_password=args.ssh_password,
     )
 
     if not args.keep_vm:
         atexit.register(tester.destroy_vm)
 
     try:
-        tester.create_vm()
-        tester.attach_iso()
-        state = tester.get_vm_state()
-        print(f"[ppsa-installer-e2e] VM '{tester.vm_name}' ready. State: {state}")
+        overall_pass, _results = tester.run()
     except FileNotFoundError:
         print(
             f"ERROR: VBoxManage not found at {vbox_path}. Install VirtualBox or "
@@ -580,9 +848,8 @@ def main():
             file=sys.stderr,
         )
         sys.exit(2)
-    except VBoxManageError as exc:
-        print(f"FAIL: {exc}", file=sys.stderr)
-        sys.exit(1)
+
+    sys.exit(0 if overall_pass else 1)
 
 
 if __name__ == "__main__":
