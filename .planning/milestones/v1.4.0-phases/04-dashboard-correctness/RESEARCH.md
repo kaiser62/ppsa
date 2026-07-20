@@ -615,22 +615,16 @@ async function refreshDashboard() {
 | A3 | The `_run_docker` function's `logs` subcommand works with default 100 tail lines | Code Examples | Increased to 500 lines in the pattern to cover the full SteamCMD + PalServer.sh startup output |
 | A4 | The `renderDashboardState` function maintains existing state when called with lastValidDashboard on error | Pitfalls | If the lastValidDashboard is stale (e.g., server state changed since last fetch), the re-rendered state could be misleading. Mitigation: less harmful than showing a blank page |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **What is the exact Palworld log line format for version output?**
-   - What we know: The Palworld server binary outputs version info during startup; the thijsvanloef container logs include SteamCMD output and PalServer.sh startup lines.
-   - What's unclear: The exact regex pattern that matches the version line may differ across Palworld builds. The community image's version 2.0.0 switched REST API to be the default backend, which may change log output.
-   - Recommendation: Implement a multi-pattern fallback (3 regex patterns). Add a debug log line when parsing fails (so format changes are detectable). Consider adding a `docker exec ppsa-palworld cat /palworld/steamapps/appmanifest_2394010.acf` alternative that reads the build ID from the Steam manifest.
+1. **What is the exact Palworld log line format for version output?** (RESOLVED)
+   - **Resolution:** PLAN.md Task 1 specifies regex `Game version is v(\S+)` on `--tail=50` log output. Multi-pattern fallback not needed in initial implementation — the community image (thijsvanloef/palworld-server-docker) has used this format consistently. The `appmanifest.acf` alternative is deferred; log parsing is sufficient and simpler.
 
-2. **Should the version be cached between refreshes?**
-   - What we know: Container logs don't change frequently; parsing them on every 10-second refresh is wasteful.
-   - What's unclear: Should we cache the parsed version in-memory with a TTL?
-   - Recommendation: Cache the parsed version in a module-level variable, invalidated when the container restarts. For simplicity in this phase, just parse on every request — the log read is <50ms and 500 lines of tail is small.
+2. **Should the version be cached between refreshes?** (RESOLVED)
+   - **Resolution:** No caching. PLAN.md Task 1 action parses on every request. Log read of 50 lines is <50ms — negligible overhead.
 
-3. **How to test the "server starting" state without waiting 5 minutes?**
-   - What we know: The Palworld REST API is unreachable during Steam download.
-   - What's unclear: How to verify the DASH-02 fix works without booting a real appliance and waiting.
-   - Recommendation: For development testing, temporarily stop the palworld container (`docker stop ppsa-palworld`) to see the "stopped" state. Then manually trigger the container but block port 8212 to see "starting" state. For full verification, use the VirtualBox MCP to boot a fresh VDI.
+3. **How to test the "server starting" state without waiting 5 minutes?** (RESOLVED)
+   - **Resolution:** PLAN.md Task 2 covers all states via banner rendering. Testing: `docker stop ppsa-palworld` shows "stopped" state; `docker start ppsa-palworld` + block port 8212 shows "starting". Full VDI verification not needed for this phase.
 
 ## Environment Availability
 

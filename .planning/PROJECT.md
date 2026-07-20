@@ -1,15 +1,11 @@
 # PPSA — Portable Palworld Server Appliance
 
-## Current Milestone: v1.4.0 WebUI Professional Overhaul
+## Current State
 
-**Goal:** Redesign the plain-JS WebUI to look professional and fix the dashboard
-bugs, keeping the FastAPI + no-build architecture and NetBird-only ports.
+**Shipped:** v1.4.0 WebUI Professional Overhaul (2026-07-20) — see
+`.planning/milestones/v1.4.0-ROADMAP.md` and `.planning/MILESTONES.md`.
 
-**Target features:**
-- Professional frontend redesign — plain JS/CSS/HTML, no framework, no build step
-- Fix game version rendering blank (parse container log, not just REST API)
-- Fix empty dashboard states on fresh boot (server-starting affordance)
-- Harden weak error handling across dashboard endpoints
+No milestone currently in progress. Run `/gsd-new-milestone` to start the next one.
 
 ## What This Is
 
@@ -47,15 +43,17 @@ end-to-end path.
 - ✓ Token-efficient installer verification over NetBird SSH (text-first) — v1.3.0 Phase 01
 - ✓ Repeatable one-shot smoke test returning pass/fail summary (`scripts/ppsa-smoke-test.py`) — v1.3.0 Phase 02
 - ✓ WebUI save-file backup/restore/restore-upload endpoints + UI — v1.3.0 Phase 03
+- ✓ Dashboard shows durable, correct game version (REST → container-log parse → last-known-good cache) — v1.4.0 Phase 04
+- ✓ Honest fresh-boot dashboard states (server_state: running/starting/stopped) and explicit empty states — v1.4.0 Phase 04
+- ✓ Graceful `/api/system` degradation (200 + degraded flag, never bare 500) and actionable frontend error messaging — v1.4.0 Phase 04
+- ✓ WebUI looks professional and intentional — shared design-system tokens (spacing/typography/color), 1px card elevation, inline SVG icon sprite, across all 5 tabs — v1.4.0 Phase 05
+- ✓ Native `confirm()`/`alert()` calls migrated to styled `.modal` component; responsive at 375px/1440px with 44px touch targets — v1.4.0 Phase 05
 
 ### Active
 
-<!-- Building toward these — milestone v1.4.0. -->
+<!-- Building toward these — next milestone not yet defined. Run /gsd-new-milestone. -->
 
-- [ ] WebUI looks professional and intentional (not templated-default) across all tabs
-- [ ] Game server version displays correctly on the dashboard
-- [ ] Fresh-boot dashboard shows meaningful server-starting/empty states, not blanks
-- [ ] Dashboard endpoints degrade gracefully on upstream/transient failures
+(None yet — awaiting next milestone definition)
 
 ### Out of Scope
 
@@ -78,6 +76,15 @@ end-to-end path.
   lockups; mitigated with `wsl --shutdown` + VM reset.
 - Self-hosted NetBird control plane at `nb.pleaseee.eu.org`; `config.yaml
   exposedAddress` must carry explicit `:443` or Signal is advertised portless.
+- WebUI frontend (`docker/webui/app/static/index.html`) now carries a real design
+  system (spacing/typography CSS custom properties, 1px card/section elevation,
+  inline SVG icon sprite, `.modal` component for all destructive confirmations) —
+  still a single static file, no framework, no build step. Any future frontend
+  work should extend these tokens/classes rather than reintroducing inline styles
+  or native `confirm()`/`alert()`.
+- The user's stated next interest (not yet scoped as a milestone): an automated
+  installer-ISO end-to-end tester, driven over the same NetBird SSH path Phase 1/2
+  of v1.3.0 established.
 
 ## Constraints
 
@@ -97,6 +104,9 @@ end-to-end path.
 | offen `stop-during-backup` label on the palworld service, not volumes | offen reads the label only from containers; hot-tar of the live save races and aborts | ✓ Good (v1.3.0-nb.12) |
 | Test fresh installs over NetBird SSH instead of VBox scancodes/screenshots | Appliance already on the overlay; text-first SSH is far cheaper in tokens | — Pending |
 | Reserve a persistent NetBird IP for the test peer | Every build's test VM reachable at a stable address; avoids per-boot IP churn | — Pending |
+| Phase 5 executed sequentially on the main tree instead of git-worktree isolation | Claude Code's `isolation="worktree"` forked from the repo's default branch (`master`) instead of the checked-out `netbird` branch, causing a base-mismatch halt; since all 4 plans touch one shared file anyway (no real parallelism to lose), sequential execution sidesteps the bug entirely | ✓ Good |
+| Design-system foundation built as its own first plan (05-01) before any tab restyling | Every later plan (05-02/03/04) needed the same tokens/classes/icon-sprite; building them once up front avoided each tab re-deriving spacing/typography ad hoc | ✓ Good |
+| Human-verified the 375px/1440px responsive checkpoint live via browser preview tooling instead of trusting executor self-report | Executor agents cannot render a browser; a `checkpoint:human-verify` gate exists precisely so a real viewport/no-scroll/touch-target check happens before the plan is marked done | ✓ Good |
 
 ## Evolution
 
@@ -116,4 +126,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-19 — milestone v1.4.0 (WebUI Professional Overhaul) started*
+*Last updated: 2026-07-20 — after v1.4.0 (WebUI Professional Overhaul) milestone shipped*
