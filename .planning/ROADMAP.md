@@ -44,7 +44,7 @@ from boot through full install to a target disk, verifies the boot chain came up
 correctly, runs the existing SSH-based smoke test against the result, and reports
 one pass/fail summary.
 
-- [ ] **Phase 6: VM Orchestration & Scripted Install** - A script unattended-installs the freshly-built ISO into a disposable VirtualBox VM end to end, and refuses to run when doing so would collide with the live production WireGuard identity
+- [x] **Phase 6: VM Orchestration & Scripted Install** - A script unattended-installs the freshly-built ISO into a disposable VirtualBox VM end to end, and refuses to run when doing so would collide with the live production WireGuard identity (completed 2026-07-20)
 - [ ] **Phase 7: Boot-Chain Verification & Hang Detection** - The tester tells a genuinely broken/hung install apart from a correctly-booted one (signed or documented-fallback boot chain) instead of guessing from a fixed timeout
 - [ ] **Phase 8: Smoke-Test Integration & Unified Reporting** - Running the whole pipeline is one script invocation that folds the existing smoke test into a single pass/fail verdict, with raw output kept out of the main context
 
@@ -168,7 +168,7 @@ Plans:
   3. The script correctly distinguishes "install still in progress" from "install done" by polling for `/opt/ppsa/.installed` (or equivalent marker) over SSH, rather than guessing from elapsed time
   4. Before booting, the script performs a safety check (or applies a documented safe default) that prevents the test VM from colliding with the live production box's shared WireGuard identity (`10.8.0.2`), and it tolerates a slow/failed NetBird enrollment without hanging the whole run
 
-**Plans:** 2/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 
@@ -214,7 +214,7 @@ Phases execute in numeric order. Phase 6 (VM orchestration + scripted install) i
 | 3. WebUI Save-File Backup & Restore | v1.3.0 | 2/2 | Complete | 2026-07-17 |
 | 4. Dashboard Correctness & Error Handling | v1.4.0 | 1/1 | Complete | 2026-07-20 |
 | 5. Professional Visual Redesign | v1.4.0 | 4/4 | Complete | 2026-07-20 |
-| 6. VM Orchestration & Scripted Install | v1.5.0 | 2/2 | In Progress|  |
+| 6. VM Orchestration & Scripted Install | v1.5.0 | 2/2 | Complete    | 2026-07-20 |
 | 7. Boot-Chain Verification & Hang Detection | v1.5.0 | 0/? | Not started | - |
 | 8. Smoke-Test Integration & Unified Reporting | v1.5.0 | 0/? | Not started | - |
 </content>
