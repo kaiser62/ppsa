@@ -1118,33 +1118,36 @@ async function wifiConnect() {
 }
 
 async function wifiDisconnect() {
-  if (!confirm('Disconnect from current Wi-Fi network?')) return;
-  try {
-    await api('/api/wifi/disconnect', { method: 'POST' });
-    setTimeout(wifiScan, 1000);
-  } catch (err) {
-    alert('Disconnect failed: ' + err.message);
-  }
+  confirmAction('Disconnect from current Wi-Fi network?', async () => {
+    try {
+      await api('/api/wifi/disconnect', { method: 'POST' });
+      setTimeout(wifiScan, 1000);
+    } catch (err) {
+      showAlert('Disconnect failed: ' + err.message, 'error', 'wifi-alert');
+    }
+  });
 }
 
 async function wifiHotspotStart() {
-  if (!confirm('Start the PPSA-Setup hotspot? You will need to reconnect to "PPSA-Setup" Wi-Fi (password: ppsa-setup-2026) to manage this device.')) return;
-  try {
-    await api('/api/wifi/hotspot/start', { method: 'POST' });
-    alert('PPSA-Setup hotspot started. Connect your phone to "PPSA-Setup" and visit http://192.168.50.1/');
-  } catch (err) {
-    alert('Failed: ' + err.message);
-  }
+  confirmAction('Start the PPSA-Setup hotspot? You will need to reconnect to "PPSA-Setup" Wi-Fi (password: ppsa-setup-2026) to manage this device.', async () => {
+    try {
+      await api('/api/wifi/hotspot/start', { method: 'POST' });
+      showAlert('PPSA-Setup hotspot started. Connect your phone to "PPSA-Setup" and visit http://192.168.50.1/', 'success', 'wifi-alert');
+    } catch (err) {
+      showAlert('Failed: ' + err.message, 'error', 'wifi-alert');
+    }
+  });
 }
 
 async function wifiHotspotStop() {
-  if (!confirm('Turn off the PPSA-Setup hotspot?')) return;
-  try {
-    await api('/api/wifi/hotspot/stop', { method: 'POST' });
-    alert('PPSA-Setup hotspot stopped.');
-  } catch (err) {
-    alert('Failed: ' + err.message);
-  }
+  confirmAction('Turn off the PPSA-Setup hotspot?', async () => {
+    try {
+      await api('/api/wifi/hotspot/stop', { method: 'POST' });
+      showAlert('PPSA-Setup hotspot stopped.', 'success', 'wifi-alert');
+    } catch (err) {
+      showAlert('Failed: ' + err.message, 'error', 'wifi-alert');
+    }
+  });
 }
 
 // --- Mods ---
@@ -1243,14 +1246,15 @@ async function applyFirewall() {
 }
 
 async function resetFirewall() {
-  if (!confirm('Reset firewall to the default allowed ports?\n\nTCP: 22, 80, 443, 8080, 10086, 25575\nUDP: 8211, 27015\nICMP: on')) return;
-  try {
-    const data = await api('/api/firewall/reset', { method: 'POST' });
-    showAlert('Reset to defaults: ' + (data.detail || 'ok'), 'success', 'fw-alert');
-    setTimeout(refreshFirewall, 500);
-  } catch(e) {
-    showAlert('Error: ' + e.message, 'error', 'fw-alert');
-  }
+  confirmAction('Reset firewall to the default allowed ports? TCP: 22, 80, 443, 8080, 10086, 25575 / UDP: 8211, 27015 / ICMP: on', async () => {
+    try {
+      const data = await api('/api/firewall/reset', { method: 'POST' });
+      showAlert('Reset to defaults: ' + (data.detail || 'ok'), 'success', 'fw-alert');
+      setTimeout(refreshFirewall, 500);
+    } catch(e) {
+      showAlert('Error: ' + e.message, 'error', 'fw-alert');
+    }
+  });
 }
 
 // --- WireGuard ---
