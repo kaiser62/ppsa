@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.5.0
 milestone_name: Installer-ISO E2E Tester
-current_phase: 7
-current_phase_name: Boot-Chain Verification & Hang Detection
-status: planning
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-07-20T11:13:03.664Z"
+current_phase: 07
+status: verifying
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-07-20T12:46:41.262Z"
 last_activity: 2026-07-20
-last_activity_desc: Phase 06 complete, transitioned to Phase 7
+last_activity_desc: Phase 07 execution started
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 13
+current_phase_name: Boot-Chain Verification & Hang Detection
 ---
 
 # Project State
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-20)
 
 **Core value:** A user can boot the appliance, and their friends can reach a working Palworld server over the private overlay network — every build must preserve that end-to-end path.
-**Current focus:** Phase 06 — vm-orchestration-scripted-install
+**Current focus:** Phase 07
 
 ## Current Position
 
-Phase: 7 — Boot-Chain Verification & Hang Detection
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-20 — Phase 06 complete, transitioned to Phase 7
+Phase: 07 — EXECUTING
+Plan: 1 of 1
+Status: Phase complete — ready for verification
+Last activity: 2026-07-20 — Phase 07 execution started
 
 ### Milestone v1.5.0 Phases
 
@@ -82,6 +82,7 @@ Last activity: 2026-07-20 — Phase 06 complete, transitioned to Phase 7
 | Phase 05 P04 | 12min | 3 tasks | 1 files |
 | Phase 06 P01 | 12min | 2 tasks | 1 files |
 | Phase 06 P02 | 4min | 2 tasks | 1 files |
+| Phase 07 P01 | 8min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 06-01: Combined Task 1+2 into a single commit since both modify the same new file (scripts/ppsa-installer-e2e.py) and are tightly interdependent
 - [Phase ?]: Split Task 1 (TUI driving) and Task 2 (completion polling + run()) into separate atomic commits since acceptance criteria are independently checkable
 - [Phase ?]: wait_for_install_complete() distinguishes SSH-never-reachable from reachable-but-marker-absent timeouts via self.last_failure_reason, using SshRunner.exec()'s exit_code==-1 as the connection-failure sentinel
+- [Phase ?]: 07-01: Wired mark_step_activity() at the plan's exact 5 call sites (pre-pull + pull-retry success/failure + stack-up success/failure) rather than the research doc's per-output-line piping variant, avoiding a subshell/pipe that would change docker compose output capture under the existing log redirection
 
 ### Pending Todos
 
@@ -125,8 +127,8 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-07-20T11:08:22.667Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-07-20T12:46:41.250Z
+Stopped at: Completed 07-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
