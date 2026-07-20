@@ -5,8 +5,8 @@ milestone_name: Installer-ISO E2E Tester
 current_phase: 8
 current_phase_name: Smoke-Test Integration & Unified Reporting
 status: planning
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-07-20T12:59:53.977Z"
+stopped_at: Phase 8 context gathered
+last_updated: "2026-07-20T16:10:16.407Z"
 last_activity: 2026-07-20
 last_activity_desc: Phase 07 complete, transitioned to Phase 8
 progress:
@@ -129,9 +129,9 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-07-20T12:54:03.184Z
-Stopped at: Completed 07-02-PLAN.md
-Resume file: None
+Last session: 2026-07-20T16:10:16.396Z
+Stopped at: Phase 8 context gathered
+Resume file: .planning/phases/08-smoke-test-integration-unified-reporting/08-CONTEXT.md
 
 ## Operator Next Steps
 
