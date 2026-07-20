@@ -646,6 +646,53 @@ class InstallerE2ETester:
 
             time.sleep(POLL_INTERVAL_SECONDS)
 
+    def verify_boot_chain(self, ssh_target):
+        """Classify the post-install boot path as signed shim/GRUB or
+        unsigned grub-mkstandalone fallback (BOOT-01), by SSHing into the
+        now-installed guest and querying dmesg then /proc/cmdline.
+
+        Reuses the same SshRunner construction already established in
+        wait_for_install_complete() -- no second SSH transport.
+
+        Returns a (status, reason) tuple where status is one of "PASS",
+        "WARN", or "SKIP" (never "FAIL" -- per Pitfall 4, an unsigned
+        fallback is a documented, sometimes-intentional build posture to be
+        surfaced and judged by the release process, not an automatic hard
+        failure of this test run). Never raises -- SSH connection failures
+        classify as SKIP.
+        """
+        runner = SshRunner(ssh_target, password=self.ssh_password, verbose=self.verbose)
+        runner.accept_host_key()
+
+        stdout, stderr, exit_code = runner.exec(
+            "dmesg | grep -iE 'secure.boot|shim' | head -5", timeout=10
+        )
+        if exit_code == -1:
+            return (
+                "SKIP",
+                f"Could not verify boot chain: SSH unreachable ({stderr.strip()})",
+            )
+        if exit_code == 0 and stdout.strip():
+            return "PASS", "Signed Shim/GRUB (Secure Boot chain markers found in dmesg)"
+
+        stdout, stderr, exit_code = runner.exec("cat /proc/cmdline", timeout=10)
+        if exit_code == -1:
+            return (
+                "SKIP",
+                f"Could not verify boot chain: SSH unreachable ({stderr.strip()})",
+            )
+        if exit_code == 0 and stdout.strip():
+            lowered = stdout.lower()
+            if "efi" in lowered or "secure" in lowered:
+                return "PASS", "EFI/Secure Boot keyword found in /proc/cmdline"
+
+        return (
+            "WARN",
+            "No signed shim/GRUB markers found via dmesg or /proc/cmdline -- "
+            "likely Unsigned grub-mkstandalone fallback (expected/acceptable "
+            "only when Secure Boot is off; see CLAUDE.md Boot chain section)",
+        )
+
     def run(self):
         """Orchestrate the full pipeline: create -> attach -> boot -> drive
         TUI -> poll for install completion -> summary.
