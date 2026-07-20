@@ -52,7 +52,7 @@
     background: var(--surface);
     padding: 2rem; border-radius: 12px; width: 100%; max-width: 400px;
   }
-  .login-card h1 { margin-bottom: 0.5rem; }
+  .login-card h1 { font-size: var(--font-display-size); font-weight: var(--font-weight-semibold); margin-bottom: var(--space-sm); }
   .login-card p { color: var(--text-muted); margin-bottom: 1.5rem; }
   .login-card input { width: 100%; padding: 0.75rem; margin-bottom: 1rem;
     border: 1px solid var(--surface2); border-radius: 8px;
@@ -66,11 +66,11 @@
     display: flex; justify-content: space-between; align-items: center;
     flex-wrap: wrap; gap: 0.5rem;
   }
-  header h1 { font-size: 1.25rem; }
+  header h1 { font-size: var(--font-display-size); font-weight: var(--font-weight-semibold); }
   .nav { display: flex; gap: 0.25rem; flex-wrap: wrap; }
   .nav button {
     background: none; border: none; color: var(--text-muted);
-    padding: 0.4rem 0.75rem; border-radius: 8px; cursor: pointer;
+    padding: 12px 16px; border-radius: 8px; cursor: pointer;
     transition: all 0.2s; font-size: 0.8rem; white-space: nowrap;
   }
   .nav button:hover, .nav button.active {
@@ -173,14 +173,51 @@
   .badge-yellow { background: #422006; color: var(--yellow); }
   .badge-red { background: #450a0a; color: var(--red); }
 
+  .icon { width: 16px; height: 16px; display: inline-block; vertical-align: -3px; fill: currentColor; }
+
   .logout-btn {
     background: none; border: none; color: var(--text-muted); cursor: pointer;
     font-size: 0.875rem;
   }
   .logout-btn:hover { color: var(--red); }
+
+  @media (max-width: 768px) {
+    .nav button, button, .btn { min-height: 44px; }
+  }
 </style>
 </head>
 <body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="icon-lock" viewBox="0 0 24 24">
+    <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" fill="none" stroke-width="2"/>
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" fill="none" stroke-width="2"/>
+  </symbol>
+  <symbol id="icon-unlock" viewBox="0 0 24 24">
+    <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" fill="none" stroke-width="2"/>
+    <path d="M8 11V7a4 4 0 0 1 7.5-2" stroke="currentColor" fill="none" stroke-width="2"/>
+  </symbol>
+  <symbol id="icon-wifi-signal" viewBox="0 0 24 24">
+    <path d="M2 8.5a17 17 0 0 1 20 0" stroke="currentColor" fill="none" stroke-width="2"/>
+    <path d="M5.5 12.5a11.5 11.5 0 0 1 13 0" stroke="currentColor" fill="none" stroke-width="2"/>
+    <path d="M9 16.5a6 6 0 0 1 6 0" stroke="currentColor" fill="none" stroke-width="2"/>
+    <circle cx="12" cy="19.5" r="1.2" fill="currentColor"/>
+  </symbol>
+  <symbol id="icon-check" viewBox="0 0 24 24">
+    <path d="M5 13l4.5 4.5L19 7" stroke="currentColor" fill="none" stroke-width="2.5"/>
+  </symbol>
+  <symbol id="icon-warning" viewBox="0 0 24 24">
+    <path d="M12 3.5L22 20H2z" stroke="currentColor" fill="none" stroke-width="2"/>
+    <line x1="12" y1="9.5" x2="12" y2="14" stroke="currentColor" stroke-width="2"/>
+    <circle cx="12" cy="17" r="1" fill="currentColor"/>
+  </symbol>
+  <symbol id="icon-refresh" viewBox="0 0 24 24">
+    <path d="M4 12a8 8 0 0 1 13.66-5.66L20 8" stroke="currentColor" fill="none" stroke-width="2"/>
+    <path d="M20 4v4h-4" stroke="currentColor" fill="none" stroke-width="2"/>
+    <path d="M20 12a8 8 0 0 1-13.66 5.66L4 16" stroke="currentColor" fill="none" stroke-width="2"/>
+    <path d="M4 20v-4h4" stroke="currentColor" fill="none" stroke-width="2"/>
+  </symbol>
+</svg>
 
 <!-- Login Screen -->
 <div id="login-screen">
