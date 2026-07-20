@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.5.0
 milestone_name: Installer-ISO E2E Tester
-current_phase: 8
-current_phase_name: Smoke-Test Integration & Unified Reporting
-status: planning
-stopped_at: Phase 8 context gathered
-last_updated: "2026-07-20T16:10:16.407Z"
+current_phase: 08
+status: phase_complete
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-07-20T16:21:14.000Z"
 last_activity: 2026-07-20
-last_activity_desc: Phase 07 complete, transitioned to Phase 8
+last_activity_desc: Phase 08 execution complete (final phase of v1.5.0)
 progress:
   total_phases: 8
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 25
+  completed_phases: 3
+  total_plans: 6
+  completed_plans: 6
+  percent: 100
+current_phase_name: Smoke-Test Integration & Unified Reporting
 ---
 
 # Project State
@@ -24,20 +24,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-20)
 
 **Core value:** A user can boot the appliance, and their friends can reach a working Palworld server over the private overlay network — every build must preserve that end-to-end path.
-**Current focus:** Phase 07
+**Current focus:** Phase 08
 
 ## Current Position
 
-Phase: 8 — Smoke-Test Integration & Unified Reporting
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-20 — Phase 07 complete, transitioned to Phase 8
+Phase: 08 — COMPLETE (final phase of v1.5.0)
+Plan: 1 of 1 — complete
+Status: Phase 08 complete; milestone v1.5.0 fully executed
+Last activity: 2026-07-20 — Phase 08 execution complete
 
 ### Milestone v1.5.0 Phases
 
-- **Phase 6: VM Orchestration & Scripted Install** (VM-01, VM-02, VM-03, NET-01) — Not started. Unattended VirtualBox VM create/boot/destroy, blind-scancode TUI install drive, `/opt/ppsa/.installed` SSH poll for completion, pre-boot WG-identity-collision safety check + NetBird enrollment timeout tolerance. First phase; no dependencies.
-- **Phase 7: Boot-Chain Verification & Hang Detection** (BOOT-01, BOOT-02) — Not started. Verifies signed shim/GRUB success (or documents unsigned fallback), and heartbeat/timestamp polling to distinguish a hung install from a slow one. Depends on Phase 6.
-- **Phase 8: Smoke-Test Integration & Unified Reporting** (TEST-01, TEST-02) — Not started. Chains `scripts/ppsa-smoke-test.py` onto the verified-booted box, single script invocation, one pass/fail summary, raw output kept out of main context. Depends on Phase 6 and Phase 7.
+- **Phase 6: VM Orchestration & Scripted Install** (VM-01, VM-02, VM-03, NET-01) — Complete. Unattended VirtualBox VM create/boot/destroy, blind-scancode TUI install drive, `/opt/ppsa/.installed` SSH poll for completion, pre-boot WG-identity-collision safety check + NetBird enrollment timeout tolerance.
+- **Phase 7: Boot-Chain Verification & Hang Detection** (BOOT-01, BOOT-02) — Complete. Verifies signed shim/GRUB success (or documents unsigned fallback), and heartbeat/timestamp polling to distinguish a hung install from a slow one.
+- **Phase 8: Smoke-Test Integration & Unified Reporting** (TEST-01, TEST-02) — Complete. Chains `scripts/ppsa-smoke-test.py` onto the verified-booted box via subprocess, single script invocation, one `[SUMMARY]` pass/fail line naming the failing stage, raw output routed to a log file kept out of main context.
 
 ### Prior milestone (v1.4.0) — COMPLETED, shipped 2026-07-20
 
@@ -54,9 +54,9 @@ Last activity: 2026-07-20 — Phase 07 complete, transitioned to Phase 8
 
 **Velocity:**
 
-- Total plans completed: 9 (prior milestones)
+- Total plans completed: 15 (9 prior milestones + 6 this milestone)
 - Average duration: - min
-- Total execution time: 0 hours (this milestone)
+- Total execution time: ~41 min (this milestone)
 
 **By Phase:**
 
@@ -66,6 +66,7 @@ Last activity: 2026-07-20 — Phase 07 complete, transitioned to Phase 8
 | 5 | 4 | - | - |
 | 06 | 2 | - | - |
 | 07 | 2 | - | - |
+| 08 | 1 | 3min | 3min |
 
 **Recent Trend:**
 
@@ -85,6 +86,7 @@ Last activity: 2026-07-20 — Phase 07 complete, transitioned to Phase 8
 | Phase 06 P02 | 4min | 2 tasks | 1 files |
 | Phase 07 P01 | 8min | 1 tasks | 1 files |
 | Phase 07 P02 | 12min | 3 tasks | 1 files |
+| Phase 08 P01 | 3min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -102,16 +104,17 @@ Recent decisions affecting current work:
 - [Phase ?]: Split Task 1 (TUI driving) and Task 2 (completion polling + run()) into separate atomic commits since acceptance criteria are independently checkable
 - [Phase ?]: wait_for_install_complete() distinguishes SSH-never-reachable from reachable-but-marker-absent timeouts via self.last_failure_reason, using SshRunner.exec()'s exit_code==-1 as the connection-failure sentinel
 - [Phase ?]: 07-01: Wired mark_step_activity() at the plan's exact 5 call sites (pre-pull + pull-retry success/failure + stack-up success/failure) rather than the research doc's per-output-line piping variant, avoiding a subshell/pipe that would change docker compose output capture under the existing log redirection
+- [Phase 08-01]: run_smoke_test() invokes scripts/ppsa-smoke-test.py via subprocess.run() (never imports SmokeTestRunner), mirroring the existing run_vboxmanage()/CommandResult wrapper pattern; smoke-test's own 0/1/2 exit codes map to PASS/FAIL/FAIL
+- [Phase 08-01]: Smoke-test stage runs unconditionally after a successful wait_for_install_complete(), independent of verify_boot_chain()'s own PASS/WARN/SKIP status, since WARN/SKIP boot-chain results are informational per Phase 7's precedent
+- [Phase 08-01]: [SUMMARY] one-liner strips the redundant "FAIL: " prefix from the matched status string to avoid a "FAIL: FAIL: ..." stutter in the final human-readable line
 
 ### Pending Todos
 
-- Phase 6 planning (`/gsd-plan-phase 6`) — VM orchestration & scripted install
-- Phase 7 planning (`/gsd-plan-phase 7`) — boot-chain verification & hang detection
-- Phase 8 planning (`/gsd-plan-phase 8`) — smoke-test integration & unified reporting
+None — v1.5.0 milestone fully executed (Phases 6, 7, 8 complete). Ready for `/gsd-complete-milestone` or a manual hand-run verification pass per each phase's deferred verification item.
 
 ### Blockers/Concerns
 
-- None yet for this milestone. Research flagged: sbverify availability for boot-chain checks needs validation in Phase 7; empirical timeout calibration should happen from a hand-run of Phase 6 before hardening Phase 7's heartbeat thresholds.
+- None. Manual/hand-run verification (Phase 6 item, Phase 7 item 6, Phase 8 item 8) against a real CI-built installer ISO + VirtualBox + completed first-boot remains a deferred follow-up pass, consistent with each phase's own documented precedent — not a blocker for milestone completion.
 
 ## Deferred Items
 
@@ -129,13 +132,13 @@ Items acknowledged and carried forward:
 
 ## Session Continuity
 
-Last session: 2026-07-20T16:10:16.396Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-smoke-test-integration-unified-reporting/08-CONTEXT.md
+Last session: 2026-07-20T16:21:14.000Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
-- Review and approve the roadmap
-- Start Phase 6 planning with `/gsd-plan-phase 6`
+- v1.5.0 milestone (Phases 6, 7, 8) is fully executed — run `/gsd-complete-milestone` to archive
+- Manual hand-run verification against a real CI-built installer ISO recommended before archiving (see each phase's SUMMARY.md "User Setup Required" section)
 
 </content>

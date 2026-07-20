@@ -46,7 +46,7 @@ one pass/fail summary.
 
 - [x] **Phase 6: VM Orchestration & Scripted Install** - A script unattended-installs the freshly-built ISO into a disposable VirtualBox VM end to end, and refuses to run when doing so would collide with the live production WireGuard identity (completed 2026-07-20)
 - [x] **Phase 7: Boot-Chain Verification & Hang Detection** - The tester tells a genuinely broken/hung install apart from a correctly-booted one (signed or documented-fallback boot chain) instead of guessing from a fixed timeout (completed 2026-07-20)
-- [ ] **Phase 8: Smoke-Test Integration & Unified Reporting** - Running the whole pipeline is one script invocation that folds the existing smoke test into a single pass/fail verdict, with raw output kept out of the main context
+- [x] **Phase 8: Smoke-Test Integration & Unified Reporting** - Running the whole pipeline is one script invocation that folds the existing smoke test into a single pass/fail verdict, with raw output kept out of the main context (completed 2026-07-20)
 
 ## Phase Details
 
@@ -205,11 +205,11 @@ Plans:
   3. Raw install/boot/smoke-test output (VM console text, SSH command output, smoke-test details) is written to a log file rather than dumped into the main context — only the distilled summary is
   4. The one-line summary makes it clear which stage failed (install, boot-verify, or smoke-test) when the overall verdict is FAIL, so a failure doesn't require re-running to diagnose
 
-**Plans:** 1 plan
+**Plans:** 1/1 plans executed
 
 Plans:
 
-- [ ] 08-01-PLAN.md — Extend `ppsa-installer-e2e.py`: subprocess-invoke `ppsa-smoke-test.py` (TEST-01), raw-output log file, `--skip-smoke-test`/`--log-file` CLI flags, and a one-line pass/fail summary naming the failed stage (TEST-02)
+- [x] 08-01-PLAN.md — Extend `ppsa-installer-e2e.py`: subprocess-invoke `ppsa-smoke-test.py` (TEST-01), raw-output log file, `--skip-smoke-test`/`--log-file` CLI flags, and a one-line pass/fail summary naming the failed stage (TEST-02)
 
 ## Progress
 
@@ -225,5 +225,5 @@ Phases execute in numeric order. Phase 6 (VM orchestration + scripted install) i
 | 5. Professional Visual Redesign | v1.4.0 | 4/4 | Complete | 2026-07-20 |
 | 6. VM Orchestration & Scripted Install | v1.5.0 | 2/2 | Complete    | 2026-07-20 |
 | 7. Boot-Chain Verification & Hang Detection | v1.5.0 | 2/2 | Complete    | 2026-07-20 |
-| 8. Smoke-Test Integration & Unified Reporting | v1.5.0 | 0/? | Not started | - |
+| 8. Smoke-Test Integration & Unified Reporting | v1.5.0 | 1/1 | Complete    | 2026-07-20 |
 </content>

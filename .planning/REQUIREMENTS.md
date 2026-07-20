@@ -21,8 +21,8 @@ reports one pass/fail summary.
 
 ### Smoke Test & Reporting
 
-- [ ] **TEST-01**: Script invokes the existing `scripts/ppsa-smoke-test.py` against the freshly-installed box and folds its result into the overall verdict, without duplicating its logic
-- [ ] **TEST-02**: A single script invocation reports one pass/fail summary (exit code 0/1 + one-liner), keeping raw install/boot/smoke-test output out of the main context
+- [x] **TEST-01**: Script invokes the existing `scripts/ppsa-smoke-test.py` against the freshly-installed box and folds its result into the overall verdict, without duplicating its logic
+- [x] **TEST-02**: A single script invocation reports one pass/fail summary (exit code 0/1 + one-liner), keeping raw install/boot/smoke-test output out of the main context
 
 ### Network Safety
 
@@ -61,8 +61,8 @@ Deferred to a future milestone. Tracked but not in current roadmap.
 | NET-01 | Phase 6 | Complete |
 | BOOT-01 | Phase 7 | Complete |
 | BOOT-02 | Phase 7 | Complete |
-| TEST-01 | Phase 8 | Pending |
-| TEST-02 | Phase 8 | Pending |
+| TEST-01 | Phase 8 | Complete |
+| TEST-02 | Phase 8 | Complete |
 
 **Coverage:**
 
