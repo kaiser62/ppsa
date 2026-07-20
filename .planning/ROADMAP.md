@@ -205,7 +205,7 @@ Plans:
   3. Raw install/boot/smoke-test output (VM console text, SSH command output, smoke-test details) is written to a log file rather than dumped into the main context — only the distilled summary is
   4. The one-line summary makes it clear which stage failed (install, boot-verify, or smoke-test) when the overall verdict is FAIL, so a failure doesn't require re-running to diagnose
 
-**Plans:** 1/1 plans executed
+**Plans:** 1/1 plans complete
 
 Plans:
 
