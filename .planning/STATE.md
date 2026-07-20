@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.5.0
 milestone_name: Installer-ISO E2E Tester
-current_phase: 08
-status: completed
+status: Awaiting next milestone
 stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-07-20T16:28:09.887Z"
+last_updated: "2026-07-20T16:29:40.478Z"
 last_activity: 2026-07-20
-last_activity_desc: Phase 08 complete
+last_activity_desc: Milestone v1.5.0 completed and archived
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 5
   completed_plans: 5
   percent: 38
+current_phase: 08
 current_phase_name: Smoke-Test Integration & Unified Reporting
 ---
 
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 
 ## Current Position
 
-Phase: 08
-Plan: Not started
-Status: All phases complete
-Last activity: 2026-07-20 — Phase 08 complete
+Phase: Milestone v1.5.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-20 — Milestone v1.5.0 completed and archived
 
 ### Milestone v1.5.0 Phases
 
@@ -138,7 +138,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- v1.5.0 milestone (Phases 6, 7, 8) is fully executed — run `/gsd-complete-milestone` to archive
-- Manual hand-run verification against a real CI-built installer ISO recommended before archiving (see each phase's SUMMARY.md "User Setup Required" section)
-
-</content>
+- Start the next milestone with /gsd-new-milestone

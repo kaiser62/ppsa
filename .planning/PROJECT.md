@@ -1,21 +1,25 @@
 # PPSA — Portable Palworld Server Appliance
 
-## Current Milestone: v1.5.0 Installer-ISO E2E Tester
+## Current State
 
-**Goal:** A single on-demand script drives a freshly-built installer ISO from
-boot through full install to a target disk, verifies the signed/unsigned boot
-chain came up correctly, runs the existing SSH-based smoke test against the
-result, and reports one pass/fail summary — CI wiring deferred as a stretch
-item since it needs a self-hosted VirtualBox-capable runner.
+**Shipped:** v1.5.0 Installer-ISO E2E Tester (2026-07-20) — `scripts/ppsa-installer-e2e.py`
+now drives a freshly-built installer ISO from boot through full install to a
+target disk, verifies the boot chain (signed shim/GRUB or documented unsigned
+fallback), distinguishes a genuine install hang from a slow-but-working one
+via heartbeat polling, chains the existing SSH smoke test against the result,
+and reports one pass/fail summary with raw noise routed to a log file. CI
+wiring remains a deferred stretch item (needs a self-hosted VirtualBox-capable
+runner).
 
-**Target features:**
-- Scripted installer-ISO boot + blind-TUI-keystroke install-to-completion in a fresh VirtualBox VM
-- Boot-chain verification (signed shim/GRUB success, or documented unsigned-fallback path with Secure Boot off)
-- Reuse/extend the v1.3.0 Phase 2 SSH smoke-test script against the post-install box
-- Single script invocation, one pass/fail summary, raw output kept out of main context
+**Previously shipped:**
+- v1.4.0 WebUI Professional Overhaul (2026-07-20) — see `.planning/milestones/v1.4.0-ROADMAP.md`
+- v1.3.0 Build Verification & WebUI Backup (2026-07-17) — see `.planning/milestones/v1.3.0-ROADMAP.md` (if archived)
 
-**Previously shipped:** v1.4.0 WebUI Professional Overhaul (2026-07-20) — see
-`.planning/milestones/v1.4.0-ROADMAP.md` and `.planning/MILESTONES.md`.
+See `.planning/milestones/v1.5.0-ROADMAP.md` and `.planning/MILESTONES.md` for full milestone history.
+
+## Next Milestone Goals
+
+Not yet defined — run `/gsd-new-milestone` to scope the next milestone.
 
 ## What This Is
 
@@ -58,15 +62,16 @@ end-to-end path.
 - ✓ Graceful `/api/system` degradation (200 + degraded flag, never bare 500) and actionable frontend error messaging — v1.4.0 Phase 04
 - ✓ WebUI looks professional and intentional — shared design-system tokens (spacing/typography/color), 1px card elevation, inline SVG icon sprite, across all 5 tabs — v1.4.0 Phase 05
 - ✓ Native `confirm()`/`alert()` calls migrated to styled `.modal` component; responsive at 375px/1440px with 44px touch targets — v1.4.0 Phase 05
+- ✓ Scripted installer-ISO run boots a fresh VirtualBox VM and drives install to completion unattended (VBoxManage + blind scancode) — v1.5.0 Phase 06
+- ✓ Boot-chain verification (signed shim/GRUB success, documented unsigned fallback) after install — v1.5.0 Phase 07
+- ✓ Heartbeat-based hang detection distinguishes slow-but-progressing installs from genuine hangs — v1.5.0 Phase 07
+- ✓ Existing SSH smoke test chained as subprocess against freshly-installed box, single pass/fail summary, raw output to log file — v1.5.0 Phase 08
 
 ### Active
 
-<!-- Building toward these — milestone v1.5.0. -->
+<!-- Building toward these — next milestone not yet scoped. -->
 
-- [ ] A scripted installer-ISO run boots a fresh VirtualBox VM from the ISO and drives the install to completion without manual keystrokes
-- [ ] The tester verifies the resulting boot (signed shim/GRUB, or documented unsigned fallback) actually comes up post-install
-- [ ] The tester runs the existing SSH smoke-test flow against the freshly-installed box and folds its result into the overall verdict
-- [ ] A single script invocation reports one pass/fail summary, keeping raw install/boot/smoke-test output out of the main context
+None yet — run `/gsd-new-milestone` to define next milestone's Active requirements.
 
 ### Out of Scope
 
@@ -79,26 +84,27 @@ end-to-end path.
 
 - Mature project with substantial shipped history (v1.2.x WireGuard line frozen on
   `master`; v1.3.0-nb.N NetBird line active on the default `netbird` branch).
-- Testing is the current pain point: installer smoke tests run in VirtualBox and
-  today lean on blind scancode keystrokes, screenshot polling, and probe scripts —
-  all token-heavy. The appliance already enrolls in NetBird at first boot, so the
-  test VM gets an overlay IP reachable from a NetBird dev peer, and SSH `:22` is
-  already gated through `WG_FRIENDS` from `100.64.0.0/10` — an SSH-first test path
-  needs no console-inject/ufw hack.
+- Testing pain point (installer verification, manual VBox scancode/screenshot
+  polling) is now resolved: `scripts/ppsa-installer-e2e.py` drives the full
+  boot-install-verify-smoketest loop unattended, one pass/fail summary, raw
+  noise routed to a log file instead of context. Manual `ppsa-installer-test`
+  skill flow still exists for one-off ad-hoc runs but the scripted path is
+  now the default verification route for release builds.
 - Known VBox-on-this-host hazard: WSL2/Hyper-V contention causes guest soft
-  lockups; mitigated with `wsl --shutdown` + VM reset.
+  lockups; mitigated with `wsl --shutdown` + VM reset. Confirmed still present
+  during v1.5.0 Phase 6-8 test runs — no fix, workaround only.
 - Self-hosted NetBird control plane at `nb.pleaseee.eu.org`; `config.yaml
   exposedAddress` must carry explicit `:443` or Signal is advertised portless.
-- WebUI frontend (`docker/webui/app/static/index.html`) now carries a real design
+- WebUI frontend (`docker/webui/app/static/index.html`) carries a real design
   system (spacing/typography CSS custom properties, 1px card/section elevation,
   inline SVG icon sprite, `.modal` component for all destructive confirmations) —
   still a single static file, no framework, no build step. Any future frontend
   work should extend these tokens/classes rather than reintroducing inline styles
   or native `confirm()`/`alert()`.
-- v1.5.0 builds directly on v1.3.0 Phase 1 (NetBird test-peer/SSH access) and
-  Phase 2 (scripted smoke test) — this milestone adds the missing front half
-  (scripted install-from-ISO + boot-chain check), then chains into the existing
-  smoke test rather than replacing it.
+- CI wiring for the E2E tester (running it in GitHub Actions rather than only
+  by hand) is deferred — needs a self-hosted VirtualBox-capable runner, not
+  yet provisioned. Tracked as a v2 candidate (CI-01) if a future milestone
+  wants it.
 
 ## Constraints
 
@@ -116,8 +122,12 @@ end-to-end path.
 | NetBird is primary networking; `netbird` is default branch | Solves the NAT/identity problems WireGuard kept hitting (P2P via STUN + relay fallback) | ✓ Good |
 | WireGuard deprecated but retained, gated by `PPSA_WG_ENABLED` | Reversible deprecation — keep baked creds for a fast re-enable without re-registering | ✓ Good |
 | offen `stop-during-backup` label on the palworld service, not volumes | offen reads the label only from containers; hot-tar of the live save races and aborts | ✓ Good (v1.3.0-nb.12) |
-| Test fresh installs over NetBird SSH instead of VBox scancodes/screenshots | Appliance already on the overlay; text-first SSH is far cheaper in tokens | — Pending |
-| Reserve a persistent NetBird IP for the test peer | Every build's test VM reachable at a stable address; avoids per-boot IP churn | — Pending |
+| Test fresh installs over NetBird SSH instead of VBox scancodes/screenshots | Appliance already on the overlay; text-first SSH is far cheaper in tokens | ✓ Good (v1.5.0 Phase 6-8) |
+| Reserve a persistent NetBird IP for the test peer | Every build's test VM reachable at a stable address; avoids per-boot IP churn | ✓ Good (v1.5.0 Phase 6) |
+| Boot-chain verified post-boot over SSH (dmesg/`/proc/cmdline` classification) instead of pre-boot ESP file inspection | Avoids a Windows-side sbverify/EFI-partition-mount dependency; SSH access already required for the rest of the pipeline | ✓ Good (v1.5.0 Phase 7) |
+| Heartbeat file (`/run/ppsa-install.activity`) written at install.sh call sites, polled by the tester for hang detection | Distinguishes "still pulling Docker layers" from "actually stuck" without guessing a fixed timeout | ✓ Good (v1.5.0 Phase 7) |
+| Smoke test invoked as a subprocess, not imported as a module | Keeps `ppsa-smoke-test.py` decoupled and independently runnable; avoids coupling its internals/globals to the e2e orchestrator | ✓ Good (v1.5.0 Phase 8) |
+| Worktree base-mismatch auto-degrades to sequential execution (issue #683) | Repo's `netbird` branch diverged from `origin/HEAD`; GSD tooling detects and falls back automatically, no manual intervention needed | ✓ Good (validated 3x: Phase 6, 7, 8) |
 | Phase 5 executed sequentially on the main tree instead of git-worktree isolation | Claude Code's `isolation="worktree"` forked from the repo's default branch (`master`) instead of the checked-out `netbird` branch, causing a base-mismatch halt; since all 4 plans touch one shared file anyway (no real parallelism to lose), sequential execution sidesteps the bug entirely | ✓ Good |
 | Design-system foundation built as its own first plan (05-01) before any tab restyling | Every later plan (05-02/03/04) needed the same tokens/classes/icon-sprite; building them once up front avoided each tab re-deriving spacing/typography ad hoc | ✓ Good |
 | Human-verified the 375px/1440px responsive checkpoint live via browser preview tooling instead of trusting executor self-report | Executor agents cannot render a browser; a `checkpoint:human-verify` gate exists precisely so a real viewport/no-scroll/touch-target check happens before the plan is marked done | ✓ Good |
@@ -140,4 +150,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-20 — milestone v1.5.0 (Installer-ISO E2E Tester) started*
+*Last updated: 2026-07-20 after v1.5.0 milestone (Installer-ISO E2E Tester)*
