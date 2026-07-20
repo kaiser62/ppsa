@@ -52,6 +52,10 @@ DEFAULT_CPUS = 4
 DEFAULT_DISK_SIZE_MB = 51200  # 50GB, per PITFALLS.md Pitfall 8 (40GB is marginal)
 DEFAULT_BRIDGE_ADAPTER = "Realtek Gaming 2.5GbE Family Controller"
 DEFAULT_TIMEOUT_SECONDS = 600
+# Matches the proven manual recipe in .claude/skills/ppsa-installer-test/
+# SKILL.md section "1. Create VM" (--basefolder "H:\dev\palimage\vms") --
+# C: is repo/OS-only per CLAUDE.md's disk usage policy.
+DEFAULT_VM_BASEFOLDER = r"H:\dev\palimage\vms"
 WINDOWS_VBOXMANAGE_FALLBACK = r"C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
 
 # NET-01 safety check constants
@@ -333,6 +337,7 @@ class InstallerE2ETester:
         cpus=DEFAULT_CPUS,
         disk_size_mb=DEFAULT_DISK_SIZE_MB,
         bridge_adapter=DEFAULT_BRIDGE_ADAPTER,
+        basefolder=DEFAULT_VM_BASEFOLDER,
         keep_vm=False,
         timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
         verbose=False,
@@ -348,6 +353,7 @@ class InstallerE2ETester:
         self.cpus = cpus
         self.disk_size_mb = disk_size_mb
         self.bridge_adapter = bridge_adapter
+        self.basefolder = basefolder
         self.keep_vm = keep_vm
         self.timeout_seconds = timeout_seconds
         self.verbose = verbose
@@ -361,9 +367,11 @@ class InstallerE2ETester:
         # must_have on actionable/distinguishable timeout reporting).
         self.last_failure_reason = None
 
-        # VM working directory: alongside the default VirtualBox VMs folder
-        # convention, but namespaced under a predictable path for this tool.
-        self.vm_dir = Path.home() / "VirtualBox VMs" / self.vm_name
+        # VM working directory: rooted at self.basefolder (default matches
+        # the repo's H:-drive scratch convention; C: is repo/OS-only per
+        # CLAUDE.md's disk usage policy) rather than the VirtualBox default
+        # C:\Users\<user>\VirtualBox VMs\ location.
+        self.vm_dir = Path(self.basefolder) / self.vm_name
 
     def _log(self, message):
         if self.verbose:
@@ -395,7 +403,18 @@ class InstallerE2ETester:
     def create_vm(self):
         """Create the VM, configure it, and attach a fresh VDI disk."""
         self._log(f"Creating VM '{self.vm_name}'...")
-        self._run(["createvm", "--name", self.vm_name, "--ostype", "Debian_64", "--register"])
+        self._run(
+            [
+                "createvm",
+                "--name",
+                self.vm_name,
+                "--ostype",
+                "Debian_64",
+                "--register",
+                "--basefolder",
+                str(self.basefolder),
+            ]
+        )
 
         mac = self._generate_stable_mac()
         self._run(["modifyvm", self.vm_name, "--memory", str(self.memory_mb)])
@@ -958,6 +977,13 @@ def build_arg_parser():
         help="Host network adapter to bridge the VM's NIC to",
     )
     parser.add_argument(
+        "--basefolder",
+        default=DEFAULT_VM_BASEFOLDER,
+        help="Directory where VirtualBox registers the VM and stores its disk "
+        f"(default: {DEFAULT_VM_BASEFOLDER}, matching the repo's H:-drive scratch "
+        "convention; C: is repo/OS-only per CLAUDE.md's disk usage policy)",
+    )
+    parser.add_argument(
         "--keep-vm",
         action="store_true",
         help="Skip destroy-on-exit cleanup (leave the VM running/registered for inspection)",
@@ -1046,6 +1072,7 @@ def main():
         cpus=args.cpus,
         disk_size_mb=args.disk_size_mb,
         bridge_adapter=args.bridge_adapter,
+        basefolder=args.basefolder,
         keep_vm=args.keep_vm,
         timeout_seconds=args.timeout_seconds,
         verbose=args.verbose,
