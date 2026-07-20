@@ -23,7 +23,7 @@
 
 - [x] **UI-01**: The WebUI presents a cohesive, intentional visual design (typography, color, spacing, components) that does not read as a templated default, applied consistently across all tabs
 - [x] **UI-02**: The dashboard, server controls, firewall, backup, and Wi-Fi tabs share one design system (shared CSS variables/components) rather than ad-hoc per-tab styling
-- [ ] **UI-03**: The redesigned UI remains a single static bundle with no framework and no build step, served by the existing FastAPI app
+- [x] **UI-03**: The redesigned UI remains a single static bundle with no framework and no build step, served by the existing FastAPI app
 - [x] **UI-04**: The UI is responsive/usable on a typical laptop and phone browser (the onboarding and friend-facing case)
 
 ### Dashboard Correctness
@@ -60,7 +60,7 @@ Deferred — acknowledged but not in this milestone.
 |-------------|-------|--------|
 | UI-01 | Phase 5 | Complete |
 | UI-02 | Phase 5 | Complete |
-| UI-03 | Phase 5 | Pending |
+| UI-03 | Phase 5 | Complete |
 | UI-04 | Phase 5 | Complete |
 | DASH-01 | Phase 4 | Complete |
 | DASH-02 | Phase 4 | Complete |

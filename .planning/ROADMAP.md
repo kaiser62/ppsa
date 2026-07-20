@@ -29,7 +29,7 @@ Phase numbering is continuous across milestones — v1.4.0 continues from Phase 
 **Milestone Goal:** Redesign the plain-JS WebUI to look professional and intentional and fix the dashboard correctness/error-handling bugs — without changing the FastAPI + no-build architecture or the NetBird-only port exposure.
 
 - [x] **Phase 4: Dashboard Correctness & Error Handling** - The dashboard reports the real game version, shows honest server-starting/empty states on fresh boot, and degrades gracefully with actionable messaging when upstream calls fail (completed 2026-07-20)
-- [ ] **Phase 5: Professional Visual Redesign** - Every WebUI tab shares one intentional, non-templated design system as a single static bundle (no framework, no build step) that stays usable on laptop and phone
+- [x] **Phase 5: Professional Visual Redesign** - Every WebUI tab shares one intentional, non-templated design system as a single static bundle (no framework, no build step) that stays usable on laptop and phone (completed 2026-07-20)
 
 ## Phase Details
 
@@ -123,14 +123,14 @@ Plans:
   3. The redesigned UI is still a single static bundle served by the existing FastAPI app — no JS framework, no bundler, no build step, and `webui/frontend/` is untouched
   4. The UI is usable and readable on both a typical laptop browser and a phone browser (the onboarding and friend-facing case), without horizontal scrolling or broken layout
 
-**Plans**: 3/4 plans executed
+**Plans**: 4/4 plans executed
 
 Plans:
 
 - [x] 05-01-PLAN.md — Design system foundation: spacing/typography tokens, elevation, SVG icon sprite, touch targets, brand-consistent header
 - [x] 05-02-PLAN.md — Apply system to Dashboard + Server Controls tabs
 - [x] 05-03-PLAN.md — Apply system to Firewall + Backup + Wi-Fi tabs (empty states, long-text overflow, emoji-to-SVG icon swap)
-- [ ] 05-04-PLAN.md — Migrate remaining native confirm()/alert() calls to .modal; human-verify 375px/1440px responsive layout and touch targets
+- [x] 05-04-PLAN.md — Migrate remaining native confirm()/alert() calls to .modal; human-verify 375px/1440px responsive layout and touch targets
 
 **UI hint**: yes
 
@@ -145,6 +145,6 @@ Phases execute in numeric order. Phase 4 (dashboard correctness) is independent 
 | 2. Scripted Smoke Test | v1.3.0 | 1/1 | Complete | 2026-07-17 |
 | 3. WebUI Save-File Backup & Restore | v1.3.0 | 2/2 | Complete | 2026-07-17 |
 | 4. Dashboard Correctness & Error Handling | v1.4.0 | 1/1 | Complete    | 2026-07-20 |
-| 5. Professional Visual Redesign | v1.4.0 | 3/4 | In Progress|  |
+| 5. Professional Visual Redesign | v1.4.0 | 4/4 | Complete | 2026-07-20 |
 </content>
 </invoke>
