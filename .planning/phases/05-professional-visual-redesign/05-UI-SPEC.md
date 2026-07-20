@@ -1,7 +1,7 @@
 ---
 phase: 5
 slug: professional-visual-redesign
-status: draft
+status: verified
 shadcn_initialized: false
 preset: none
 created: 2026-07-20
@@ -75,6 +75,8 @@ Additional semantic (status, not counted in the 60/30/10 — these are state ind
 
 Accent reserved for: Sign In button, Save/Apply/Connect/Save-World/Save-File-Backup/Backup-Now primary buttons, active nav tab indicator, input focus ring. Never applied to plain body links, card borders, or non-interactive decorative elements.
 
+**60/30/10 metric (formal, checker Dimension 3 recommendation):** dominant `#0f172a` background must read as ~60% of the viewport at rest, secondary surfaces (`#1e293b`/`#334155` cards/sections/inputs) ~30%, accent `#3b82f6` capped near ~10% and only on the reserved elements above. Planner/executor should sanity-check this ratio visually on the dashboard and controls tabs — if accent starts creeping onto more than the reserved element list, the ratio breaks and the palette reads as busy rather than calm.
+
 ---
 
 ## Copywriting Contract
@@ -134,15 +136,17 @@ Applicable state considerations resolved: 9 covered, 2 backstop, 0 unresolved
 
 **Dark-only:** confirmed no light/dark toggle in this phase (UI-V2-02 is explicitly deferred to v2 in REQUIREMENTS.md) — the existing dark slate palette is the permanent aesthetic, not a placeholder.
 
+**Primary focal point (checker Dimension 2 recommendation):** Dashboard tab's primary focal point is the server-status stat card — the running/starting/stopped/degraded badge plus server name, positioned first in the stat-card grid. It draws the eye first because it's the only badge using a semantic status color (green/yellow/red) against the otherwise-muted accent-reserved palette, and because it answers the single question a friend-facing user opens the dashboard to ask ("is the server up?") before any other stat. Server Controls tab's primary focal point is the accent-colored primary action button for the current state (Start/Stop/Restart), positioned above secondary controls. Firewall/Backup/Wi-Fi tabs have no single dominant focal point — they're utility/list screens where the primary CTA (Save & Apply / Backup Now / Connect) anchors attention via the accent color alone, consistent with the reserved-accent rule above.
+
 ---
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (FLAG resolved — primary focal point added above)
+- [x] Dimension 3 Color: PASS (FLAG resolved — 60/30/10 metric formalized above)
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-07-20
