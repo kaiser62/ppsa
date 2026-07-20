@@ -86,6 +86,7 @@
   .card h3 { color: var(--text-muted); font-size: var(--font-label-size); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; }
   .card .value { font-size: var(--font-display-size); font-weight: var(--font-weight-semibold); }
   .card .sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+  #stat-version { font-size: var(--font-heading-size); overflow-wrap: anywhere; }
   .status-ok { color: var(--green); }
   .status-error { color: var(--red); }
   .status-warn { color: var(--yellow); }
@@ -135,7 +136,7 @@
   }
 
   /* Alerts */
-  .alert { padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; display: none; }
+  .alert { padding: var(--space-sm) var(--space-md); border-radius: 8px; margin-bottom: var(--space-sm); display: none; }
   .alert.show { display: block; }
   .alert-success { background: #14532d; color: var(--green); }
   .alert-error { background: #450a0a; color: var(--red); }
@@ -255,12 +256,12 @@
 
     <!-- Dashboard -->
     <div id="page-dashboard" class="page active">
-      <div id="dashboard-alert" class="alert" style="display:none"></div>
+      <div id="dashboard-alert" class="alert"></div>
       <div class="grid" id="dash-stats">
         <div class="card"><h3>Players</h3><div class="value" id="stat-players">-</div></div>
         <div class="card"><h3>Server FPS</h3><div class="value" id="stat-fps">-</div></div>
         <div class="card"><h3>Uptime</h3><div class="value" id="stat-uptime">-</div></div>
-        <div class="card"><h3>Version</h3><div class="value" id="stat-version" style="font-size:1rem">-</div></div>
+        <div class="card"><h3>Version</h3><div class="value" id="stat-version">-</div></div>
       </div>
       <div class="section">
         <h2>Connected Players</h2>
