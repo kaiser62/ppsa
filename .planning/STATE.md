@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.5.0
 milestone_name: Installer-ISO E2E Tester
-current_phase: 07
-status: verifying
+current_phase: 8
+current_phase_name: Smoke-Test Integration & Unified Reporting
+status: planning
 stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-07-20T12:54:03.197Z"
+last_updated: "2026-07-20T12:59:53.977Z"
 last_activity: 2026-07-20
-last_activity_desc: Phase 07 execution started
+last_activity_desc: Phase 07 complete, transitioned to Phase 8
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 4
   completed_plans: 4
   percent: 25
-current_phase_name: Boot-Chain Verification & Hang Detection
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-20)
 
 ## Current Position
 
-Phase: 07 — EXECUTING
-Plan: 1 of 1
-Status: Phase complete — ready for verification
-Last activity: 2026-07-20 — Phase 07 execution started
+Phase: 8 — Smoke-Test Integration & Unified Reporting
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-20 — Phase 07 complete, transitioned to Phase 8
 
 ### Milestone v1.5.0 Phases
 
@@ -54,7 +54,7 @@ Last activity: 2026-07-20 — Phase 07 execution started
 
 **Velocity:**
 
-- Total plans completed: 7 (prior milestones)
+- Total plans completed: 9 (prior milestones)
 - Average duration: - min
 - Total execution time: 0 hours (this milestone)
 
@@ -65,6 +65,7 @@ Last activity: 2026-07-20 — Phase 07 execution started
 | 4 | 1 | - | - |
 | 5 | 4 | - | - |
 | 06 | 2 | - | - |
+| 07 | 2 | - | - |
 
 **Recent Trend:**
 

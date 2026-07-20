@@ -45,7 +45,7 @@ correctly, runs the existing SSH-based smoke test against the result, and report
 one pass/fail summary.
 
 - [x] **Phase 6: VM Orchestration & Scripted Install** - A script unattended-installs the freshly-built ISO into a disposable VirtualBox VM end to end, and refuses to run when doing so would collide with the live production WireGuard identity (completed 2026-07-20)
-- [ ] **Phase 7: Boot-Chain Verification & Hang Detection** - The tester tells a genuinely broken/hung install apart from a correctly-booted one (signed or documented-fallback boot chain) instead of guessing from a fixed timeout
+- [x] **Phase 7: Boot-Chain Verification & Hang Detection** - The tester tells a genuinely broken/hung install apart from a correctly-booted one (signed or documented-fallback boot chain) instead of guessing from a fixed timeout (completed 2026-07-20)
 - [ ] **Phase 8: Smoke-Test Integration & Unified Reporting** - Running the whole pipeline is one script invocation that folds the existing smoke test into a single pass/fail verdict, with raw output kept out of the main context
 
 ## Phase Details
@@ -186,7 +186,7 @@ Plans:
   2. During a long-running install (e.g. slow Docker pulls), the tester distinguishes real progress from a genuine hang via heartbeat/timestamp polling, so a slow-but-working install is not falsely reported as failed
   3. A boot-chain verification failure and a hang-detected timeout produce distinguishable, actionable failure reasons in the tester's output rather than one generic "failed" result
 
-**Plans:** 2/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 
@@ -220,6 +220,6 @@ Phases execute in numeric order. Phase 6 (VM orchestration + scripted install) i
 | 4. Dashboard Correctness & Error Handling | v1.4.0 | 1/1 | Complete | 2026-07-20 |
 | 5. Professional Visual Redesign | v1.4.0 | 4/4 | Complete | 2026-07-20 |
 | 6. VM Orchestration & Scripted Install | v1.5.0 | 2/2 | Complete    | 2026-07-20 |
-| 7. Boot-Chain Verification & Hang Detection | v1.5.0 | 2/2 | In Progress|  |
+| 7. Boot-Chain Verification & Hang Detection | v1.5.0 | 2/2 | Complete    | 2026-07-20 |
 | 8. Smoke-Test Integration & Unified Reporting | v1.5.0 | 0/? | Not started | - |
 </content>
