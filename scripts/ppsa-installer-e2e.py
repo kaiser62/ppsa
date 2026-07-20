@@ -69,6 +69,12 @@ INSTALL_COMPLETE_MARKER = "/opt/ppsa/.installed"
 POLL_INTERVAL_SECONDS = 15
 SSH_STALE_THRESHOLD_SECONDS = 300  # 5 min continuous unreachability, Pitfall 2 heartbeat guidance
 
+# BOOT-02 heartbeat constants. HEARTBEAT_FILE matches Plan 07-01's
+# mark_step_activity() contract in scripts/install.sh (world-readable Unix
+# epoch integer, updated during Step 3's Docker pull/up loops).
+HEARTBEAT_FILE = "/run/ppsa-install.activity"
+HEARTBEAT_STALE_THRESHOLD_SECONDS = 300  # 5 min grace period, matches SSH_STALE_THRESHOLD_SECONDS
+
 CommandResult = namedtuple("CommandResult", ["stdout", "stderr", "returncode"])
 
 # ---------------------------------------------------------------------------
@@ -559,12 +565,19 @@ class InstallerE2ETester:
         """Poll /opt/ppsa/.installed over SSH until the install completes or
         the bounded overall timeout elapses (VM-03).
 
-        Distinguishes two DISTINCT timeout reasons (NET-01's actionable-
-        timeout-reporting must_have), stored in self.last_failure_reason:
+        Also polls Plan 07-01's heartbeat file (HEARTBEAT_FILE, BOOT-02) on
+        each iteration so a slow-but-progressing Docker pull is not
+        misreported as a hang. Distinguishes THREE distinct timeout reasons
+        (NET-01's actionable-timeout-reporting must_have), stored in
+        self.last_failure_reason:
           - SSH never reachable at all during the whole run (host/tunnel/
             NetBird enrollment issue)
-          - SSH became reachable but the .installed marker never appeared
-            (installer itself hung or failed)
+          - SSH became reachable, the .installed marker never appeared, but
+            the heartbeat (if any) stayed fresh -- installer is legitimately
+            just slow, not hung
+          - SSH became reachable, the .installed marker never appeared, AND
+            the heartbeat has gone stale past HEARTBEAT_STALE_THRESHOLD_SECONDS
+            -- SUSPECTED HANG
 
         Returns (True, elapsed_seconds) on success, (False, elapsed_seconds)
         on timeout. Never raises -- SSH connection failures are treated as
@@ -575,6 +588,7 @@ class InstallerE2ETester:
 
         start = time.time()
         last_successful_contact = None  # timestamp of last SSH command that actually ran
+        last_heartbeat_epoch = None  # parsed Unix epoch from HEARTBEAT_FILE, or None if never observed
 
         while True:
             elapsed = time.time() - start
@@ -609,13 +623,44 @@ class InstallerE2ETester:
                     file=sys.stderr,
                 )
 
+            # BOOT-02: poll the heartbeat file alongside the marker check.
+            # Never crashes the loop -- unreadable/absent/garbage content all
+            # fall back to "no heartbeat signal available" (Pitfall 3/T-07-07).
+            hb_stdout, _hb_stderr, hb_exit_code = runner.exec(
+                f"cat {HEARTBEAT_FILE} 2>/dev/null", timeout=10
+            )
+            if hb_exit_code == 0 and hb_stdout.strip():
+                try:
+                    last_heartbeat_epoch = int(hb_stdout.strip())
+                except ValueError:
+                    pass  # garbage content -- keep previous last_heartbeat_epoch, don't crash
+
+            if last_heartbeat_epoch is not None:
+                heartbeat_age = time.time() - last_heartbeat_epoch
+                print(f"[ppsa-installer-e2e]   heartbeat: {heartbeat_age:.0f}s ago")
+            else:
+                print("[ppsa-installer-e2e]   heartbeat: none observed yet")
+
             elapsed = time.time() - start
             if elapsed >= overall_timeout_seconds:
+                heartbeat_stale = (
+                    last_heartbeat_epoch is not None
+                    and (time.time() - last_heartbeat_epoch) > HEARTBEAT_STALE_THRESHOLD_SECONDS
+                )
                 if last_successful_contact is None:
                     self.last_failure_reason = (
                         f"SSH never became reachable at {ssh_target} within "
                         f"{overall_timeout_seconds}s (host/tunnel/NetBird "
                         f"enrollment likely never came up)"
+                    )
+                elif heartbeat_stale:
+                    stale_for = time.time() - last_heartbeat_epoch
+                    self.last_failure_reason = (
+                        f"SUSPECTED HANG: {INSTALL_COMPLETE_MARKER} never "
+                        f"appeared within {overall_timeout_seconds}s AND "
+                        f"{HEARTBEAT_FILE} has been stale for {stale_for:.0f}s "
+                        f"(> {HEARTBEAT_STALE_THRESHOLD_SECONDS}s threshold) -- "
+                        f"installer appears genuinely stalled, not just slow"
                     )
                 else:
                     stale_for = time.time() - last_successful_contact
