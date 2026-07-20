@@ -1052,7 +1052,7 @@ async function restoreUploadBackup() {
 // --- Wi-Fi ---
 async function wifiScan() {
   const tbody = document.getElementById('wifi-network-tbody');
-  tbody.innerHTML = '<tr><td colspan="5" class="muted">Scanning…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" class="empty-row">Scanning…</td></tr>';
   try {
     const r = await api('/api/wifi/scan');
     document.getElementById('wifi-current-ssid').textContent = (r.networks.find(n => n.connected) || {}).ssid || '—';
@@ -1060,7 +1060,7 @@ async function wifiScan() {
     document.getElementById('wifi-current-signal').textContent = cur ? cur.signal_pct + '%' : '—';
     document.getElementById('wifi-current-ip').textContent = cur ? (await fetch('/api/system').then(r => r.json()).then(s => s.host_ip || '—').catch(() => '—')) : '—';
     if (r.networks.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="muted">No networks found. Make sure Wi-Fi hardware is available.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-row">No networks found. Make sure Wi-Fi hardware is available.</td></tr>';
       return;
     }
     tbody.innerHTML = r.networks.map(n => {
@@ -1068,10 +1068,10 @@ async function wifiScan() {
       const band = n.freq_mhz > 5000 ? '5 GHz' : (n.freq_mhz > 0 ? '2.4 GHz' : '?');
       const sec = n.security || 'Open';
       const conn = n.connected ? ' <span class="badge ok">connected</span>' : '';
-      const secIcon = sec === 'Open' ? '🔓' : '🔒';
+      const secIcon = sec === 'Open' ? '<svg class="icon"><use href="#icon-unlock"/></svg>' : '<svg class="icon"><use href="#icon-lock"/></svg>';
       const escapedSsid = n.ssid.replace(/'/g, "\\'");
       return `<tr>
-        <td><strong>${e(n.ssid)}</strong>${conn}</td>
+        <td class="filename-cell"><strong>${e(n.ssid)}</strong>${conn}</td>
         <td>${bars} (${n.signal_pct}%)</td>
         <td>${band}</td>
         <td>${secIcon} ${e(sec)}</td>
