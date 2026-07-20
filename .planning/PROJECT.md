@@ -1,11 +1,21 @@
 # PPSA — Portable Palworld Server Appliance
 
-## Current State
+## Current Milestone: v1.5.0 Installer-ISO E2E Tester
 
-**Shipped:** v1.4.0 WebUI Professional Overhaul (2026-07-20) — see
+**Goal:** A single on-demand script drives a freshly-built installer ISO from
+boot through full install to a target disk, verifies the signed/unsigned boot
+chain came up correctly, runs the existing SSH-based smoke test against the
+result, and reports one pass/fail summary — CI wiring deferred as a stretch
+item since it needs a self-hosted VirtualBox-capable runner.
+
+**Target features:**
+- Scripted installer-ISO boot + blind-TUI-keystroke install-to-completion in a fresh VirtualBox VM
+- Boot-chain verification (signed shim/GRUB success, or documented unsigned-fallback path with Secure Boot off)
+- Reuse/extend the v1.3.0 Phase 2 SSH smoke-test script against the post-install box
+- Single script invocation, one pass/fail summary, raw output kept out of main context
+
+**Previously shipped:** v1.4.0 WebUI Professional Overhaul (2026-07-20) — see
 `.planning/milestones/v1.4.0-ROADMAP.md` and `.planning/MILESTONES.md`.
-
-No milestone currently in progress. Run `/gsd-new-milestone` to start the next one.
 
 ## What This Is
 
@@ -51,9 +61,12 @@ end-to-end path.
 
 ### Active
 
-<!-- Building toward these — next milestone not yet defined. Run /gsd-new-milestone. -->
+<!-- Building toward these — milestone v1.5.0. -->
 
-(None yet — awaiting next milestone definition)
+- [ ] A scripted installer-ISO run boots a fresh VirtualBox VM from the ISO and drives the install to completion without manual keystrokes
+- [ ] The tester verifies the resulting boot (signed shim/GRUB, or documented unsigned fallback) actually comes up post-install
+- [ ] The tester runs the existing SSH smoke-test flow against the freshly-installed box and folds its result into the overall verdict
+- [ ] A single script invocation reports one pass/fail summary, keeping raw install/boot/smoke-test output out of the main context
 
 ### Out of Scope
 
@@ -82,9 +95,10 @@ end-to-end path.
   still a single static file, no framework, no build step. Any future frontend
   work should extend these tokens/classes rather than reintroducing inline styles
   or native `confirm()`/`alert()`.
-- The user's stated next interest (not yet scoped as a milestone): an automated
-  installer-ISO end-to-end tester, driven over the same NetBird SSH path Phase 1/2
-  of v1.3.0 established.
+- v1.5.0 builds directly on v1.3.0 Phase 1 (NetBird test-peer/SSH access) and
+  Phase 2 (scripted smoke test) — this milestone adds the missing front half
+  (scripted install-from-ISO + boot-chain check), then chains into the existing
+  smoke test rather than replacing it.
 
 ## Constraints
 
@@ -126,4 +140,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-20 — after v1.4.0 (WebUI Professional Overhaul) milestone shipped*
+*Last updated: 2026-07-20 — milestone v1.5.0 (Installer-ISO E2E Tester) started*

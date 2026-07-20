@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4.0
-milestone_name: WebUI Professional Overhaul
-status: Awaiting next milestone
-stopped_at: Completed 05-04-PLAN.md — Phase 5 complete (4/4 plans), v1.4.0 milestone complete
-last_updated: "2026-07-20T09:15:41.260Z"
+milestone: v1.5.0
+milestone_name: Installer-ISO E2E Tester
+status: planning
+last_updated: "2026-07-20T09:50:43.999Z"
 last_activity: 2026-07-20
-last_activity_desc: Milestone v1.4.0 completed and archived
 progress:
-  total_phases: 5
-  completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
-  percent: 40
-current_phase: 05
-current_phase_name: Professional Visual Redesign
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -28,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-07-19)
 
 ## Current Position
 
-Phase: Milestone v1.4.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-20 — Milestone v1.4.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-20 — Milestone v1.5.0 started
 
 ### Milestone v1.4.0 Phases
 
