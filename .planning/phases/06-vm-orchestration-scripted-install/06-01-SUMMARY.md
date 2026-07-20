@@ -125,3 +125,10 @@ None - no external service configuration required. Note for future runs: `check_
 ---
 *Phase: 06-vm-orchestration-scripted-install*
 *Completed: 2026-07-20*
+
+## Self-Check: PASSED
+
+- FOUND: scripts/ppsa-installer-e2e.py
+- FOUND: .planning/phases/06-vm-orchestration-scripted-install/06-01-SUMMARY.md
+- FOUND: b525c74 (Task 1+2 commit)
+- FOUND: 7869375 (SUMMARY commit, this file's own prior commit)
