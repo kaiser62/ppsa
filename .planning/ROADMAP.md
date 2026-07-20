@@ -205,7 +205,11 @@ Plans:
   3. Raw install/boot/smoke-test output (VM console text, SSH command output, smoke-test details) is written to a log file rather than dumped into the main context — only the distilled summary is
   4. The one-line summary makes it clear which stage failed (install, boot-verify, or smoke-test) when the overall verdict is FAIL, so a failure doesn't require re-running to diagnose
 
-**Plans**: TBD
+**Plans:** 1 plan
+
+Plans:
+
+- [ ] 08-01-PLAN.md — Extend `ppsa-installer-e2e.py`: subprocess-invoke `ppsa-smoke-test.py` (TEST-01), raw-output log file, `--skip-smoke-test`/`--log-file` CLI flags, and a one-line pass/fail summary naming the failed stage (TEST-02)
 
 ## Progress
 
