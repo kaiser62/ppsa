@@ -73,6 +73,14 @@ INSTALL_COMPLETE_MARKER = "/opt/ppsa/.installed"
 POLL_INTERVAL_SECONDS = 15
 SSH_STALE_THRESHOLD_SECONDS = 300  # 5 min continuous unreachability, Pitfall 2 heartbeat guidance
 
+# Guest-IP discovery constants (fallback source for ssh_target when
+# --ssh-target isn't supplied -- a fresh VM's future DHCP-assigned LAN IP
+# cannot be known in advance). GUEST_IP_PROPERTY is the standard VBox
+# NAT/bridged-DHCP guest-property path that VirtualBox itself populates from
+# its own DHCP lease info, independent of Guest Additions.
+GUEST_IP_PROPERTY = "/VirtualBox/GuestInfo/Net/0/V4/IP"
+GUEST_IP_DISCOVERY_TIMEOUT_SECONDS = 300
+
 # BOOT-02 heartbeat constants. HEARTBEAT_FILE matches Plan 07-01's
 # mark_step_activity() contract in scripts/install.sh (world-readable Unix
 # epoch integer, updated during Step 3's Docker pull/up loops).
@@ -546,6 +554,59 @@ class InstallerE2ETester:
             "this point via bounded SSH polling."
         )
 
+    def discover_guest_ip(self, poll_interval_seconds=15):
+        """Poll the VM's VirtualBox guest property for its DHCP-assigned
+        LAN IPv4 address, on a bounded overall timeout.
+
+        Fallback source for ssh_target when --ssh-target isn't supplied --
+        a genuinely fresh VM's future DHCP-assigned LAN IP cannot be known
+        in advance. Mirrors the polling-loop shape already used in
+        wait_for_install_complete(): bounded overall timeout, sleep between
+        attempts, progress line each iteration.
+
+        Returns (ip_string, None) on success or (None, reason) on timeout.
+        Never raises -- a transient VBoxManage call failure here must not
+        crash the whole run.
+        """
+        start = time.time()
+        while True:
+            elapsed = time.time() - start
+            print(
+                f"[ppsa-installer-e2e] Polling for guest IP via "
+                f"{GUEST_IP_PROPERTY} ... ({elapsed:.0f}s / "
+                f"{GUEST_IP_DISCOVERY_TIMEOUT_SECONDS}s elapsed)"
+            )
+
+            try:
+                result = run_vboxmanage(
+                    self.vbox_path,
+                    ["guestproperty", "get", self.vm_name, GUEST_IP_PROPERTY],
+                )
+                match = re.search(r"Value:\s*(\S+)", result.stdout)
+                if match:
+                    candidate = match.group(1).strip()
+                    if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", candidate):
+                        self._log(f"Discovered guest IP: {candidate}")
+                        return candidate, None
+                # "No value set!" or an unparseable/garbage match -- not yet
+                # available, keep polling.
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+            elapsed = time.time() - start
+            if elapsed >= GUEST_IP_DISCOVERY_TIMEOUT_SECONDS:
+                reason = (
+                    f"guest IP never appeared in {GUEST_IP_PROPERTY} within "
+                    f"{GUEST_IP_DISCOVERY_TIMEOUT_SECONDS}s (retry by hand: "
+                    f"VBoxManage guestproperty get {self.vm_name} "
+                    f"{GUEST_IP_PROPERTY}, or VBoxManage guestproperty "
+                    f"enumerate {self.vm_name})"
+                )
+                print(f"FAIL: {reason}", file=sys.stderr)
+                return None, reason
+
+            time.sleep(poll_interval_seconds)
+
     def get_vm_state(self):
         """Query the VM's current power state via showvminfo
         --machinereadable. Mirrors Get-VmPowerState in VirtualBox.psm1."""
@@ -858,24 +919,43 @@ class InstallerE2ETester:
                 break
         else:
             # All lifecycle/TUI steps passed -- now poll for install
-            # completion, only if an --ssh-target was supplied.
+            # completion. If --ssh-target wasn't supplied, attempt to
+            # self-discover the guest's DHCP-assigned LAN IP first, since a
+            # genuinely fresh VM's future address cannot be known in
+            # advance. An explicit --ssh-target always takes priority over
+            # discovery (it may legitimately be a NetBird overlay address
+            # unreachable via the bridged LAN NIC that guest-property
+            # discovery would return).
+            effective_ssh_target = None
+            discovery_failed = False
             if not self.ssh_target:
-                results.append(
-                    (
-                        "wait_for_install_complete",
-                        "FAIL: no --ssh-target supplied; cannot poll for "
-                        "install completion",
+                discovered_ip, discover_fail_reason = self.discover_guest_ip()
+                if discovered_ip:
+                    effective_ssh_target = discovered_ip
+                    results.append(
+                        ("discover_guest_ip", f"PASS ({discovered_ip})")
                     )
-                )
+                else:
+                    discovery_failed = True
+                    results.append(
+                        ("discover_guest_ip", f"FAIL: {discover_fail_reason}")
+                    )
+            else:
+                effective_ssh_target = self.ssh_target
+
+            if discovery_failed:
+                pass  # do not attempt wait_for_install_complete() with no target
             else:
                 success, elapsed = self.wait_for_install_complete(
-                    self.ssh_target, self.timeout_seconds
+                    effective_ssh_target, self.timeout_seconds
                 )
                 if success:
                     results.append(
                         ("wait_for_install_complete", f"PASS ({elapsed:.0f}s)")
                     )
-                    boot_chain_status, boot_chain_reason = self.verify_boot_chain(self.ssh_target)
+                    boot_chain_status, boot_chain_reason = self.verify_boot_chain(
+                        effective_ssh_target
+                    )
                     results.append(
                         ("verify_boot_chain", f"{boot_chain_status}: {boot_chain_reason}")
                     )
@@ -890,7 +970,7 @@ class InstallerE2ETester:
                             ("smoke_test", "SKIP: --skip-smoke-test set")
                         )
                     else:
-                        status, reason = self.run_smoke_test(self.ssh_target)
+                        status, reason = self.run_smoke_test(effective_ssh_target)
                         results.append(("smoke_test", f"{status}: {reason}"))
                 else:
                     results.append(
