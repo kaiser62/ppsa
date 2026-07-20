@@ -47,6 +47,15 @@ mark_step() {
     echo "$n" > "$PROGRESS_FILE" 2>/dev/null || true
     echo "[STEP] Entering step $n/$TOTAL_STEPS: ${STEP_NAMES[$((n-1))]:-}"
 }
+# Helper: update the activity heartbeat (/run/ppsa-install.activity). Polled
+# externally over SSH by scripts/ppsa-installer-e2e.py (BOOT-02 hang detection)
+# to distinguish a slow-but-progressing install from a genuine hang during
+# Step 3's multi-minute Docker pull/up. Must stay world-readable (644) so the
+# unprivileged 'ppsa' SSH user can read it without sudo.
+mark_step_activity() {
+    echo "$(date +%s)" > /run/ppsa-install.activity 2>/dev/null || true
+    chmod 644 /run/ppsa-install.activity 2>/dev/null || true
+}
 TOTAL_STEPS=9
 STEP_NAMES=(
     "Resizing root partition"
@@ -125,13 +134,16 @@ pull_with_retry() {
     local max=2
     for i in $(seq 1 $max); do
         if docker compose -f compose/docker-compose.yml pull; then
+            mark_step_activity
             return 0
         fi
         echo "Pull attempt $i/$max failed. Retrying in 5s..."
+        mark_step_activity
         sleep 5
     done
     return 1
 }
+mark_step_activity
 pull_with_retry || {
     echo "WARNING: docker compose pull failed (network or registry issue)."
     echo "Will try 'up' with whatever images are cached locally."
@@ -163,6 +175,7 @@ STACK_UP_OK=false
 for attempt in 1 2; do
     echo "Stack up attempt $attempt..."
     if docker compose -f compose/docker-compose.yml up -d --build; then
+        mark_step_activity
         # Give the daemon a moment to start containers
         sleep 5
         # Verify at least one service is actually running
@@ -174,6 +187,7 @@ for attempt in 1 2; do
             echo "WARNING: 'up -d' exited 0 but no services are running (attempt $attempt)."
         fi
     else
+        mark_step_activity
         echo "WARNING: 'up -d' failed (attempt $attempt)."
     fi
     if [ $attempt -lt 2 ]; then
