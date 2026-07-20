@@ -87,6 +87,7 @@
   .card .value { font-size: var(--font-display-size); font-weight: var(--font-weight-semibold); }
   .card .sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
   #stat-version { font-size: var(--font-heading-size); overflow-wrap: anywhere; }
+  .value-sm { font-size: var(--font-heading-size); }
   .status-ok { color: var(--green); }
   .status-error { color: var(--red); }
   .status-warn { color: var(--yellow); }
@@ -368,9 +369,9 @@
     <div id="page-backup" class="page">
       <div id="backup-alert" class="alert"></div>
       <div class="grid">
-        <div class="card"><h3>Last Backup</h3><div class="value" id="backup-last" style="font-size:1rem">-</div></div>
+        <div class="card"><h3>Last Backup</h3><div class="value value-sm" id="backup-last">-</div></div>
         <div class="card"><h3>Backup Files</h3><div class="value" id="backup-count">-</div></div>
-        <div class="card"><h3>Schedule</h3><div class="value" id="backup-schedule" style="font-size:1rem">-</div></div>
+        <div class="card"><h3>Schedule</h3><div class="value value-sm" id="backup-schedule">-</div></div>
       </div>
       <div class="section">
         <h2>Backup Configuration</h2>
@@ -393,7 +394,7 @@
           <tbody id="backup-files-body"><tr><td colspan="4">Loading...</td></tr></tbody>
         </table>
       </div>
-      <div class="card" style="margin-top:1rem">
+      <div class="card mt-lg">
         <h3>Restore from File</h3>
         <p class="muted">Upload a save-file archive (<code>.tar.gz</code>) to restore. The Palworld server will be stopped during restoration.</p>
         <div class="form-row">
@@ -965,10 +966,10 @@ async function refreshBackup() {
     const tbody = document.getElementById('backup-files-body');
     if (status.files?.length) {
       tbody.innerHTML = status.files.map(f =>
-        `<tr><td>${e(f.name)}</td><td>${(f.size/1048576).toFixed(1)} MB</td><td>${new Date(f.modified).toLocaleString()}</td><td><button class="small danger" onclick="restoreBackup('${e(f.name)}')">Restore</button></td></tr>`
+        `<tr><td class="filename-cell">${e(f.name)}</td><td>${(f.size/1048576).toFixed(1)} MB</td><td>${new Date(f.modified).toLocaleString()}</td><td><button class="small danger" onclick="restoreBackup('${e(f.name)}')">Restore</button></td></tr>`
       ).join('');
     } else {
-      tbody.innerHTML = '<tr><td colspan="4">No backups yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-row">No backups yet — click Backup Now or Save-File Backup to create one.</td></tr>';
     }
   } catch(e) { console.error('Backup:', e); }
 }
