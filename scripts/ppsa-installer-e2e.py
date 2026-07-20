@@ -61,6 +61,26 @@ WG_HANDSHAKE_STALE_SECONDS = 3600  # 1 hour, per installer-test skill's abort th
 
 CommandResult = namedtuple("CommandResult", ["stdout", "stderr", "returncode"])
 
+# ---------------------------------------------------------------------------
+# VM-02: blind scancode TUI-driving sequence
+# ---------------------------------------------------------------------------
+# Exact sequence/timings proven manually in .claude/skills/ppsa-installer-test/
+# SKILL.md section "2. Drive the installer (blind, via scancodes)". Each entry
+# is (wait_seconds, scancode_hex_string, description): wait that long (wall
+# clock, since the last step) before sending the scancodes.
+#
+# The 3x YES-confirmation scancodes MUST stay uppercase ("2a 15 95 12 92 1f 9f
+# aa 1c 9c" = Shift+Y Shift+E Shift+S + Enter). Lowercase "yes" ABORTS the
+# installer per the skill -- do not "simplify" or re-derive these bytes; they
+# are copied verbatim from the proven recipe.
+INSTALLER_TUI_SEQUENCE = (
+    (75, "1c 9c", "GRUB live menu: press ENTER"),
+    (60, "02 82 1c 9c", "PPSA Installer TUI: select disk 1 + ENTER"),
+    (4, "2a 15 95 12 92 1f 9f aa 1c 9c", "YES+ENTER confirmation 1 of 3 (uppercase)"),
+    (4, "2a 15 95 12 92 1f 9f aa 1c 9c", "YES+ENTER confirmation 2 of 3 (uppercase)"),
+    (4, "2a 15 95 12 92 1f 9f aa 1c 9c", "YES+ENTER confirmation 3 of 3 (uppercase)"),
+)
+
 
 class VBoxManageError(Exception):
     """Raised when a VBoxManage subprocess call returns a non-zero exit code."""
@@ -345,6 +365,47 @@ class InstallerE2ETester:
         """Boot the VM headless."""
         self._log(f"Booting VM '{self.vm_name}' headless...")
         self._run(["startvm", self.vm_name, "--type", "headless"], timeout=60)
+
+    def send_scancodes(self, scancode_hex_string):
+        """Inject a raw keyboard scancode sequence into the running VM via
+        VBoxManage controlvm keyboardputscancode.
+
+        A failed keystroke injection is a hard failure (VBoxManageError), not
+        something to silently continue past -- if the VM can't receive input,
+        the rest of the TUI-driving sequence is meaningless.
+        """
+        self._run(
+            ["controlvm", self.vm_name, "keyboardputscancode", *scancode_hex_string.split()],
+            timeout=15,
+        )
+
+    def drive_installer_tui(self):
+        """Blindly drive the installer TUI (VM-02) using the exact proven
+        scancode sequence + wallclock waits from INSTALLER_TUI_SEQUENCE.
+
+        Zero screenshot/OCR dependency -- this reproduces
+        .claude/skills/ppsa-installer-test/SKILL.md section 2 verbatim. Each
+        step is logged with a timestamp so a developer debugging a stall can
+        see exactly which step the run reached (PITFALLS.md Pitfall 5's
+        keystroke-validation-log mitigation).
+        """
+        start = time.time()
+        for wait_seconds, scancodes, description in INSTALLER_TUI_SEQUENCE:
+            time.sleep(wait_seconds)
+            self.send_scancodes(scancodes)
+            elapsed = time.time() - start
+            timestamp = time.strftime("%H:%M:%S")
+            print(
+                f"[{timestamp}] {description} -> scancodes sent "
+                f"(+{elapsed:.0f}s since TUI-drive start)"
+            )
+
+        print(
+            "[ppsa-installer-e2e] Installer is now wiping/writing/rebooting "
+            "unattended (~4 min per the ppsa-installer-test skill). No fixed "
+            "sleep is added here -- wait_for_install_complete() picks up from "
+            "this point via bounded SSH polling."
+        )
 
     def get_vm_state(self):
         """Query the VM's current power state via showvminfo
