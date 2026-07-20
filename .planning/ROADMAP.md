@@ -168,11 +168,11 @@ Plans:
   3. The script correctly distinguishes "install still in progress" from "install done" by polling for `/opt/ppsa/.installed` (or equivalent marker) over SSH, rather than guessing from elapsed time
   4. Before booting, the script performs a safety check (or applies a documented safe default) that prevents the test VM from colliding with the live production box's shared WireGuard identity (`10.8.0.2`), and it tolerates a slow/failed NetBird enrollment without hanging the whole run
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 
-- [ ] 06-01-PLAN.md — Orchestrator skeleton: VirtualBox VM lifecycle (create/attach-ISO/boot/destroy via VBoxManage) + pre-boot WireGuard hub identity safety check (NET-01)
+- [x] 06-01-PLAN.md — Orchestrator skeleton: VirtualBox VM lifecycle (create/attach-ISO/boot/destroy via VBoxManage) + pre-boot WireGuard hub identity safety check (NET-01)
 - [ ] 06-02-PLAN.md — Blind scancode TUI driving (VM-02) + SSH-polled `/opt/ppsa/.installed` completion detection (VM-03) + full single-invocation `run()` pipeline, completing NET-01's NetBird-timeout tolerance
 
 ### Phase 7: Boot-Chain Verification & Hang Detection
@@ -214,7 +214,7 @@ Phases execute in numeric order. Phase 6 (VM orchestration + scripted install) i
 | 3. WebUI Save-File Backup & Restore | v1.3.0 | 2/2 | Complete | 2026-07-17 |
 | 4. Dashboard Correctness & Error Handling | v1.4.0 | 1/1 | Complete | 2026-07-20 |
 | 5. Professional Visual Redesign | v1.4.0 | 4/4 | Complete | 2026-07-20 |
-| 6. VM Orchestration & Scripted Install | v1.5.0 | 0/2 | Not started | - |
+| 6. VM Orchestration & Scripted Install | v1.5.0 | 1/2 | In Progress|  |
 | 7. Boot-Chain Verification & Hang Detection | v1.5.0 | 0/? | Not started | - |
 | 8. Smoke-Test Integration & Unified Reporting | v1.5.0 | 0/? | Not started | - |
 </content>

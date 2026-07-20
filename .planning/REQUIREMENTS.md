@@ -10,7 +10,7 @@ reports one pass/fail summary.
 
 ### VM Orchestration
 
-- [ ] **VM-01**: Script creates, boots, resets, and destroys a VirtualBox test VM unattended via VBoxManage — no manual GUI steps
+- [x] **VM-01**: Script creates, boots, resets, and destroys a VirtualBox test VM unattended via VBoxManage — no manual GUI steps
 - [ ] **VM-02**: Script drives the installer TUI to completion via blind scancode keystroke injection, reusing the sequence proven in the `ppsa-installer-test` skill
 - [ ] **VM-03**: Script detects install completion by polling for `/opt/ppsa/.installed` (or equivalent first-boot marker) over SSH, distinguishing "still installing" from "done"
 
@@ -26,7 +26,7 @@ reports one pass/fail summary.
 
 ### Network Safety
 
-- [ ] **NET-01**: Script performs a pre-boot safety check (or documented default) preventing the shared WireGuard identity (`10.8.0.2`) from colliding with a live production server, and tolerates NetBird enrollment delays/timeouts without hanging the whole run
+- [x] **NET-01**: Script performs a pre-boot safety check (or documented default) preventing the shared WireGuard identity (`10.8.0.2`) from colliding with a live production server, and tolerates NetBird enrollment delays/timeouts without hanging the whole run
 
 ## v2 Requirements
 
@@ -55,16 +55,17 @@ Deferred to a future milestone. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| VM-01 | Phase 6 | Pending |
+| VM-01 | Phase 6 | Complete |
 | VM-02 | Phase 6 | Pending |
 | VM-03 | Phase 6 | Pending |
-| NET-01 | Phase 6 | Pending |
+| NET-01 | Phase 6 | Complete |
 | BOOT-01 | Phase 7 | Pending |
 | BOOT-02 | Phase 7 | Pending |
 | TEST-01 | Phase 8 | Pending |
 | TEST-02 | Phase 8 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 8 total
 - Mapped to phases: 8/8 ✓
 - Unmapped: 0
