@@ -75,6 +75,14 @@ SSH_STALE_THRESHOLD_SECONDS = 300  # 5 min continuous unreachability, Pitfall 2 
 HEARTBEAT_FILE = "/run/ppsa-install.activity"
 HEARTBEAT_STALE_THRESHOLD_SECONDS = 300  # 5 min grace period, matches SSH_STALE_THRESHOLD_SECONDS
 
+# Phase 8 (TEST-01/TEST-02): smoke-test subprocess integration. SMOKE_TEST_SCRIPT
+# is a fixed sibling-script path (D-03 -- no CLI flag for its own location).
+# DEFAULT_SMOKE_TEST_LOG_FILE is a fixed, overwritten-each-run relative path
+# (D-02), consistent with ppsa-smoke-test.py's own DEFAULT_LOG_DIR convention
+# of a plain relative default rather than an absolute system path.
+SMOKE_TEST_SCRIPT = Path(__file__).parent / "ppsa-smoke-test.py"
+DEFAULT_SMOKE_TEST_LOG_FILE = "ppsa-installer-e2e-smoke.log"
+
 CommandResult = namedtuple("CommandResult", ["stdout", "stderr", "returncode"])
 
 # ---------------------------------------------------------------------------
@@ -330,6 +338,8 @@ class InstallerE2ETester:
         verbose=False,
         ssh_target=None,
         ssh_password=None,
+        skip_smoke_test=False,
+        log_file=DEFAULT_SMOKE_TEST_LOG_FILE,
     ):
         self.iso_path = Path(iso_path).resolve()
         self.vm_name = vm_name
@@ -343,6 +353,8 @@ class InstallerE2ETester:
         self.verbose = verbose
         self.ssh_target = ssh_target
         self.ssh_password = ssh_password
+        self.skip_smoke_test = skip_smoke_test
+        self.log_file = log_file
         self._mac_address = None
         # VM-03: set on wait_for_install_complete() timeout, distinguishing
         # "SSH never reachable" from "reachable but not yet installed" (NET-01
@@ -738,6 +750,62 @@ class InstallerE2ETester:
             "only when Secure Boot is off; see CLAUDE.md Boot chain section)",
         )
 
+    def run_smoke_test(self, ssh_target):
+        """Invoke scripts/ppsa-smoke-test.py as a subprocess (TEST-01) against
+        the now-installed guest, mirroring the run_vboxmanage()/CommandResult
+        subprocess-wrapper pattern already used elsewhere in this file (D-01
+        -- never import SmokeTestRunner directly).
+
+        All raw subprocess stdout/stderr is written to self.log_file (opened
+        in "w" mode, overwritten every call per D-02) -- this method never
+        prints that raw output to stdout/stderr itself, keeping SSH/check-
+        detail noise out of this script's own console output.
+
+        Returns a (status, reason) tuple, status one of "PASS" or "FAIL".
+        Never raises -- subprocess.TimeoutExpired and OSError (including
+        FileNotFoundError) are both caught so a smoke-test invocation
+        failure never crashes the whole e2e run.
+        """
+        cmd = [
+            sys.executable,
+            str(SMOKE_TEST_SCRIPT),
+            ssh_target,
+            "--ssh-password",
+            self.ssh_password or DEFAULT_PASSWORD,
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        except subprocess.TimeoutExpired as exc:
+            return "FAIL", f"could not invoke {SMOKE_TEST_SCRIPT.name}: {exc}"
+        except OSError as exc:
+            return "FAIL", f"could not invoke {SMOKE_TEST_SCRIPT.name}: {exc}"
+
+        with open(self.log_file, "w") as f:
+            f.write(f"=== {SMOKE_TEST_SCRIPT.name} raw subprocess output ===\n")
+            f.write("--- stdout ---\n")
+            f.write(result.stdout)
+            f.write("\n--- stderr ---\n")
+            f.write(result.stderr)
+
+        if result.returncode == 0:
+            return "PASS", f"see {self.log_file} for details"
+        if result.returncode == 1:
+            return (
+                "FAIL",
+                f"smoke test reported failures; see {self.log_file} for details",
+            )
+        if result.returncode == 2:
+            return (
+                "FAIL",
+                f"smoke test hit a setup/prerequisite error (exit 2); see "
+                f"{self.log_file} for details",
+            )
+        return (
+            "FAIL",
+            f"unexpected smoke-test exit code {result.returncode}; see "
+            f"{self.log_file} for details",
+        )
+
     def run(self):
         """Orchestrate the full pipeline: create -> attach -> boot -> drive
         TUI -> poll for install completion -> summary.
@@ -888,6 +956,18 @@ def build_arg_parser():
         help=f"SSH password for the {SSH_USER} user (default: {DEFAULT_PASSWORD}, the "
         "documented first-boot default)",
     )
+    parser.add_argument(
+        "--skip-smoke-test",
+        action="store_true",
+        help="Stop after boot-verify; do not invoke scripts/ppsa-smoke-test.py "
+        "(escape hatch for debugging install/boot in isolation)",
+    )
+    parser.add_argument(
+        "--log-file",
+        default=DEFAULT_SMOKE_TEST_LOG_FILE,
+        help=f"Path to write raw smoke-test subprocess output to (default: "
+        f"{DEFAULT_SMOKE_TEST_LOG_FILE}, overwritten each run)",
+    )
     return parser
 
 
@@ -932,6 +1012,8 @@ def main():
         verbose=args.verbose,
         ssh_target=args.ssh_target,
         ssh_password=args.ssh_password,
+        skip_smoke_test=args.skip_smoke_test,
+        log_file=args.log_file,
     )
 
     if not args.keep_vm:
