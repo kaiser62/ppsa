@@ -472,7 +472,7 @@ def wait_for_install_complete(ssh_runner, max_seconds=600):
 
 **Overall:** All assumptions are low-risk; mitigations are straightforward. None are deal-breakers for Phase 7.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Heartbeat granularity:** Should the heartbeat be updated after every `docker compose pull` line, or only after significant milestones (e.g., each layer)? **Recommendation:** After every line (every 1–2 seconds during pull), to maximize sensitivity without flooding the system.
 
