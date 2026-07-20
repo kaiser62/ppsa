@@ -860,6 +860,19 @@ class InstallerE2ETester:
                     results.append(
                         ("verify_boot_chain", f"{boot_chain_status}: {boot_chain_reason}")
                     )
+
+                    # TEST-01/TEST-02: smoke-test stage runs regardless of
+                    # verify_boot_chain()'s own PASS/WARN/SKIP status -- per
+                    # Phase 7's precedent, WARN/SKIP boot-chain results are
+                    # informational, not blocking, so the box may still be
+                    # fully functional even on an unsigned-fallback boot.
+                    if self.skip_smoke_test:
+                        results.append(
+                            ("smoke_test", "SKIP: --skip-smoke-test set")
+                        )
+                    else:
+                        status, reason = self.run_smoke_test(self.ssh_target)
+                        results.append(("smoke_test", f"{status}: {reason}"))
                 else:
                     results.append(
                         (
@@ -881,6 +894,32 @@ class InstallerE2ETester:
         print(f"[PPSA E2E Installer Test] {summary_word}: {self.iso_path.name}")
         for step_name, status in results:
             print(f"  {step_name}: {status}")
+
+        # TEST-02: one-line summary naming the first failing stage on FAIL,
+        # so a tester can diagnose which of install/boot-verify/smoke-test
+        # broke without needing a re-run.
+        if overall_pass:
+            print(
+                "[SUMMARY] PASS -- install, boot-verify, and smoke-test all "
+                "succeeded"
+            )
+        else:
+            first_fail = next(
+                (
+                    (step_name, status)
+                    for step_name, status in results
+                    if status.startswith("FAIL")
+                ),
+                None,
+            )
+            if first_fail is not None:
+                step_name, status = first_fail
+                print(
+                    f"[SUMMARY] FAIL -- {step_name} failed: "
+                    f"{status[len('FAIL: '):]}"
+                )
+            else:
+                print("[SUMMARY] FAIL -- see per-step results above for details")
 
         return overall_pass, results
 
