@@ -85,6 +85,55 @@ services:
       - "docker-volume-backup.stop-during-backup=true"
 
   # ---------------------------------------------------------------------------
+  # Palworld REST API relay sidecar
+  # ---------------------------------------------------------------------------
+  # ponytail: thijsvanloef/palworld-server-docker's game binary hardcodes its
+  # REST API listener to 127.0.0.1 inside its own container netns — there is no
+  # PalWorldSettings.ini key or env var to make it bind 0.0.0.0, so no other
+  # container on the compose bridge network (including webui) can ever reach
+  # palworld:8212 directly (confirmed via debug session
+  # webui-dashboard-stuck-loading: raw TCP connects from webui to both
+  # palworld's DNS name and its bridge IP time out identically, while curl from
+  # inside the palworld container to its own loopback succeeds). This sidecar
+  # shares palworld's network namespace (network_mode: service:palworld) so it
+  # can see that loopback-bound socket, and relays a NEW port (18212, chosen to
+  # avoid any bind ambiguity with palworld's own 127.0.0.1:8212 listener) on
+  # 0.0.0.0 back out to the bridge network under the `palworld` DNS name/IP
+  # (shared netns = shared identity). webui's own networking/ports/firewall
+  # model is untouched — only PALWORLD_API_URL's port changes.
+  palworld-rest-proxy:
+    image: alpine/socat:latest
+    container_name: ppsa-palworld-rest-proxy
+    restart: unless-stopped
+    network_mode: "service:palworld"
+    depends_on:
+      palworld:
+        condition: service_started
+    command: >-
+      TCP-LISTEN:18212,fork,reuseaddr
+      TCP:127.0.0.1:8212
+    healthcheck:
+      # ponytail: alpine/socat has no ss/curl, only busybox netstat + nc.
+      # netstat -tln lists listening TCP sockets without needing a real peer.
+      test: ["CMD-SHELL", "netstat -tln 2>/dev/null | grep -q ':18212 '"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: 32M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "ppsa.component=palworld-rest-proxy"
+
+  # ---------------------------------------------------------------------------
   # Web Management UI
   # ---------------------------------------------------------------------------
   webui:
@@ -108,7 +157,15 @@ services:
       - NET_ADMIN
     environment:
       TZ: ${TZ:-UTC}
-      PALWORLD_API_URL: http://palworld:${RESTAPI_PORT:-8212}
+      # ponytail: points at the palworld-rest-proxy sidecar's relay port
+      # (18212), NOT palworld's own RESTAPI_PORT (8212) directly — Palworld's
+      # REST API binds 127.0.0.1-only inside its own container, unreachable
+      # from webui's separate netns. The proxy shares palworld's network
+      # namespace and relays 18212 -> 127.0.0.1:8212, and since it shares that
+      # namespace it answers under the same `palworld` DNS name/IP. See the
+      # palworld-rest-proxy service definition above for the full rationale
+      # (debug session webui-dashboard-stuck-loading).
+      PALWORLD_API_URL: http://palworld:18212
       PALWORLD_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       DATA_DIR: /app/data
     # ponytail: webui starts as soon as palworld *container* starts, not when
@@ -118,6 +175,8 @@ services:
     # so user can reach the WebUI while server is still downloading.
     depends_on:
       palworld:
+        condition: service_started
+      palworld-rest-proxy:
         condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
